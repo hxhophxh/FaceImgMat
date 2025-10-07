@@ -20,10 +20,11 @@
 - 👥 **人员管理**：批量导入、查询、管理人员信息
 - 📝 **匹配记录**：自动记录每次匹配历史
 - 🎨 **现代界面**：Bootstrap 5 响应式设计
+- 🔌 **离线部署**：支持完全离线环境部署
 
 ## 🚀 快速开始
 
-### 方式一：从GitHub克隆（推荐）
+### 方式一：在线部署（推荐）
 
 ```bash
 # 克隆仓库
@@ -31,6 +32,23 @@ git clone https://github.com/hxhophxh/FaceImgMat.git
 cd FaceImgMat
 
 # 按照下面的步骤继续...
+```
+
+### 方式二：离线部署（无网络环境）
+
+适用于无法访问互联网的环境，详见 [离线部署指南](docs/OFFLINE-DEPLOYMENT.md)
+
+```bash
+# 1. 在有网络的机器上运行准备脚本
+./prepare_offline_package.sh    # Linux/macOS
+# 或
+.\prepare_offline_package.ps1   # Windows
+
+# 2. 将生成的离线包传输到目标环境
+# 3. 解压并运行部署脚本
+./deploy_linux.sh               # Linux/macOS
+# 或
+.\deploy_windows.ps1            # Windows
 ```
 
 ### 方式二：下载ZIP
