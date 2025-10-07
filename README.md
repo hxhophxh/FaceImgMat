@@ -1,6 +1,16 @@
 # 🎭 人脸图像匹配系统
 
+[![GitHub](https://img.shields.io/badge/GitHub-FaceImgMat-blue?logo=github)](https://github.com/hxhophxh/FaceImgMat)
+[![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-blue?logo=python)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 基于 InsightFace + FAISS 的高性能人脸识别与匹配系统。
+
+## 🔗 快速链接
+
+- 📦 **GitHub仓库**: [https://github.com/hxhophxh/FaceImgMat](https://github.com/hxhophxh/FaceImgMat)
+- 🚀 **一键部署到Linux**: 查看 [部署指南](docs/GITHUB-TO-LINUX-DEPLOYMENT.md)
+- 📖 **完整文档**: 查看 [文档索引](docs/INDEX.md)
 
 ## ✨ 功能特性
 
@@ -13,10 +23,28 @@
 
 ## 🚀 快速开始
 
+### 方式一：从GitHub克隆（推荐）
+
+```bash
+# 克隆仓库
+git clone https://github.com/hxhophxh/FaceImgMat.git
+cd FaceImgMat
+
+# 按照下面的步骤继续...
+```
+
+### 方式二：下载ZIP
+
+从 [GitHub Releases](https://github.com/hxhophxh/FaceImgMat/releases) 下载最新版本
+
+---
+
 ### 1. 环境要求
 
 - Python 3.11 或 3.12
 - Windows / Linux / macOS
+- 至少 2GB RAM
+- 至少 5GB 磁盘空间
 
 ### 2. 安装依赖
 
@@ -65,10 +93,19 @@ python run.py
 
 ## 📖 文档
 
-- [快速开始指南](docs/quick-start-guide.md)
-- [部署文档](docs/DEPLOYMENT.md)
-- [项目结构说明](docs/PROJECT-STRUCTURE.md)
-- [完整文档索引](docs/INDEX.md)
+### 部署相关
+- 🚀 [**从GitHub部署到Linux服务器**](docs/GITHUB-TO-LINUX-DEPLOYMENT.md) - 完整的克隆和部署流程
+- 🐧 [Linux服务器部署](docs/LINUX-DEPLOYMENT.md) - Linux详细配置
+- ✅ [部署检查清单](docs/DEPLOYMENT-CHECKLIST.md) - 部署前后检查项
+- 📋 [部署文档](docs/DEPLOYMENT.md) - 通用部署说明
+
+### 使用指南
+- 📚 [快速开始指南](docs/quick-start-guide.md) - 5分钟上手
+- 🏗️ [项目结构说明](docs/PROJECT-STRUCTURE.md) - 代码组织结构
+- 🔒 [安全指南](docs/SECURITY.md) - 安全配置建议
+
+### 完整文档
+- 📑 [完整文档索引](docs/INDEX.md) - 所有文档汇总
 
 ## 🏗️ 项目结构
 
@@ -117,17 +154,65 @@ FaceImgMat/
 - **准确率**：> 99% (相似度阈值 70%)
 - **并发支持**：支持多用户同时访问
 
+## 🚢 生产环境部署
+
+### Linux服务器快速部署
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/hxhophxh/FaceImgMat.git
+cd FaceImgMat
+
+# 2. 运行一键部署脚本（详见部署文档）
+chmod +x deploy.sh
+./deploy.sh
+```
+
+详细步骤请参考：[从GitHub部署到Linux服务器完整指南](docs/GITHUB-TO-LINUX-DEPLOYMENT.md)
+
+### 使用Docker部署（即将支持）
+
+```bash
+docker pull hxhophxh/faceimgmat:latest
+docker-compose up -d
+```
+
+## 🔐 安全提醒
+
+⚠️ **首次部署后必须执行以下操作：**
+
+1. **立即修改管理员密码**
+   ```bash
+   python scripts/change_admin_password.py
+   ```
+
+2. **配置HTTPS**（生产环境必须）
+   - 参考文档：[安全指南](docs/SECURITY.md)
+
+3. **限制访问IP**（可选但推荐）
+   - 在Nginx配置中添加IP白名单
+
 ## 🤝 贡献
 
 欢迎提交 Issue 和 Pull Request！
 
+### 贡献指南
+
+1. Fork 本仓库
+2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 提交 Pull Request
+
 ## 📄 许可证
 
-MIT License
+本项目采用 MIT 许可证 - 查看 [LICENSE](LICENSE) 文件了解详情
 
-## 📞 联系方式
+## 📞 支持与反馈
 
-如有问题或建议，请提交 Issue。
+- 💬 **提问题**: [GitHub Issues](https://github.com/hxhophxh/FaceImgMat/issues)
+- 📧 **联系作者**: 通过 GitHub Issues 联系
+- 📖 **查看文档**: [完整文档索引](docs/INDEX.md)
 
 ---
 
