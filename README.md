@@ -24,6 +24,54 @@
 
 ## 🚀 快速开始
 
+### 🎯 一键部署（推荐）
+
+我们提供了**在线**和**离线**两种一键部署方式：
+
+#### 方式一：在线一键部署
+
+适合有网络连接的环境，一条命令完成所有配置：
+
+```bash
+# Windows PowerShell
+git clone https://github.com/hxhophxh/FaceImgMat.git
+cd FaceImgMat
+.\deploy_online.ps1
+
+# Linux/macOS
+git clone https://github.com/hxhophxh/FaceImgMat.git
+cd FaceImgMat
+chmod +x deploy_online.sh && ./deploy_online.sh
+```
+
+**就这么简单！** 脚本会自动完成环境检查、依赖安装、数据初始化和服务启动。
+
+#### 方式二：离线一键部署
+
+适合无网络或内网环境：
+
+```bash
+# 1. 在有网络的机器上准备离线包
+.\prepare_offline_package.ps1    # Windows
+# 或
+./prepare_offline_package.sh     # Linux/macOS
+
+# 2. 将生成的离线包传输到目标环境
+
+# 3. 在目标环境解压并部署
+.\deploy_offline.ps1             # Windows
+# 或
+./deploy_offline.sh              # Linux/macOS
+```
+
+📖 **详细部署指南**: [一键部署完整教程](docs/ONE-CLICK-DEPLOYMENT.md)
+
+---
+
+### 手动部署
+
+如果你更喜欢手动控制每个步骤：
+
 ### 方式一：在线部署（推荐）
 
 ```bash
@@ -51,7 +99,7 @@ cd FaceImgMat
 .\deploy_windows.ps1            # Windows
 ```
 
-### 方式二：下载ZIP
+### 方式三：下载ZIP
 
 从 [GitHub Releases](https://github.com/hxhophxh/FaceImgMat/releases) 下载最新版本
 
@@ -111,14 +159,18 @@ python run.py
 
 ## 📖 文档
 
+### 快速入门
+- 🚀 [**一键部署完整教程**](docs/ONE-CLICK-DEPLOYMENT.md) - ⭐ 最快部署方式
+- 📚 [快速开始指南](docs/quick-start-guide.md) - 5分钟上手
+
 ### 部署相关
 - 🚀 [**从GitHub部署到Linux服务器**](docs/GITHUB-TO-LINUX-DEPLOYMENT.md) - 完整的克隆和部署流程
 - 🐧 [Linux服务器部署](docs/LINUX-DEPLOYMENT.md) - Linux详细配置
+- 💾 [离线部署指南](docs/OFFLINE-DEPLOYMENT.md) - 无网络环境部署
 - ✅ [部署检查清单](docs/DEPLOYMENT-CHECKLIST.md) - 部署前后检查项
 - 📋 [部署文档](docs/DEPLOYMENT.md) - 通用部署说明
 
 ### 使用指南
-- 📚 [快速开始指南](docs/quick-start-guide.md) - 5分钟上手
 - 🏗️ [项目结构说明](docs/PROJECT-STRUCTURE.md) - 代码组织结构
 - 🔒 [安全指南](docs/SECURITY.md) - 安全配置建议
 
