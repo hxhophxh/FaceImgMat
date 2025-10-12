@@ -50,6 +50,13 @@ super-offline-deployment/04-AI模型文件/insightface_models/*.zip
 # 排除复制的项目源码（避免重复）
 super-offline-deployment/02-项目源码/FaceImgMat/
 
+# 排除打包文件（太大，不提交到仓库）
+FaceImgMat-*.zip
+*.zip
+
+# 排除临时 PowerShell 脚本
+prepare-super-package-v*.ps1
+
 # 保留以下文件（脚本、文档、README等）：
 # ✅ super-offline-deployment/*.bat
 # ✅ super-offline-deployment/*.ps1
