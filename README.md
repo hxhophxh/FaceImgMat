@@ -48,23 +48,37 @@ chmod +x deploy_online.sh && ./deploy_online.sh
 
 #### 方式二：离线一键部署
 
-适合无网络或内网环境：
+适合无网络或内网环境，**双击批处理文件即可完成部署**：
 
-```bash
-# 1. 在有网络的机器上准备离线包
+**第一步：准备离线包**（在有网络的机器上）
+```batch
+# Windows：双击运行
+准备离线包.bat
+
+# 或手动运行脚本
 .\prepare_offline_package.ps1    # Windows
-# 或
 ./prepare_offline_package.sh     # Linux/macOS
-
-# 2. 将生成的离线包传输到目标环境
-
-# 3. 在目标环境解压并部署
-.\deploy_offline.ps1             # Windows
-# 或
-./deploy_offline.sh              # Linux/macOS
 ```
 
-📖 **详细部署指南**: [一键部署完整教程](docs/ONE-CLICK-DEPLOYMENT.md)
+**第二步：离线部署**（在无网络的机器上）
+```batch
+# 1. 将 offline_deployment_package 文件夹复制到目标机器
+
+# 2. Windows：双击运行
+一键部署并启动.bat
+
+# 或手动运行脚本
+.\deploy_offline.ps1             # Windows
+./deploy_offline.sh              # Linux/macOS
+
+# 3. 浏览器自动打开 http://127.0.0.1:5000
+# 4. 使用默认账号登录：admin / Admin@FaceMatch2025!
+```
+
+📖 **详细指南**: 
+- [一键部署快速指南](一键部署说明.txt) - 快速参考卡
+- [完整离线部署教程](docs/ONE-CLICK-OFFLINE-GUIDE.md) - 图文详解
+- [离线部署文档](docs/OFFLINE-DEPLOYMENT.md) - 技术细节
 
 ---
 
@@ -82,21 +96,16 @@ cd FaceImgMat
 # 按照下面的步骤继续...
 ```
 
-### 方式二：离线部署（无网络环境）
+### 方式二：从GitHub部署到Linux
 
-适用于无法访问互联网的环境，详见 [离线部署指南](docs/OFFLINE-DEPLOYMENT.md)
+详见 [GitHub到Linux部署指南](docs/GITHUB-TO-LINUX-DEPLOYMENT.md)
 
 ```bash
-# 1. 在有网络的机器上运行准备脚本
-./prepare_offline_package.sh    # Linux/macOS
-# 或
-.\prepare_offline_package.ps1   # Windows
-
-# 2. 将生成的离线包传输到目标环境
-# 3. 解压并运行部署脚本
-./deploy_linux.sh               # Linux/macOS
-# 或
-.\deploy_windows.ps1            # Windows
+# 在Linux服务器上
+git clone https://github.com/hxhophxh/FaceImgMat.git
+cd FaceImgMat
+chmod +x deploy_online.sh
+./deploy_online.sh
 ```
 
 ### 方式三：下载ZIP

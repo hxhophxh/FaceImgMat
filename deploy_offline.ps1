@@ -6,7 +6,14 @@
 #   1. 将离线部署包解压到任意目录
 #   2. 在包含此脚本的目录运行: .\deploy_offline.ps1
 #   3. 等待自动部署完成
+#
+# 参数：
+#   -Silent : 静默模式，部署完成后自动退出（用于批处理调用）
 # ===================================================================
+
+param(
+    [switch]$Silent = $false
+)
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -337,17 +344,53 @@ Write-Info "  2. 运行命令: python scripts\change_admin_password.py"
 Write-Info "  3. 生产环境请配置 HTTPS 和防火墙"
 
 Write-ColorOutput ""
-Write-Info "启动服务："
-Write-ColorOutput "  cd FaceImgMat" "Cyan"
-Write-ColorOutput "  .\.venv\Scripts\Activate.ps1" "Cyan"
-Write-ColorOutput "  python run.py" "Cyan"
 
+# 根据是否静默模式决定后续行为
+if ($Silent) {
+    # 静默模式：直接退出，让批处理文件处理后续启动
+    Write-Success "✓ 部署完成！（静默模式）"
+    Write-Info "退出代码: 0"
+    exit 0
+}
+
+# 交互模式：询问用户如何启动
+Write-Info "启动选项："
+Write-ColorOutput "  [1] 立即启动服务并打开浏览器（推荐）" "Cyan"
+Write-ColorOutput "  [2] 仅启动服务（不打开浏览器）" "Cyan"
+Write-ColorOutput "  [3] 稍后手动启动" "Cyan"
 Write-ColorOutput ""
-Write-Warning-Custom "是否立即启动服务？(Y/N)"
-$response = Read-Host
-if ($response -eq "Y" -or $response -eq "y") {
-    Write-Info "正在启动服务..."
+Write-Host "请选择 (1/2/3): " -NoNewline -ForegroundColor Yellow
+$choice = Read-Host
+
+if ($choice -eq "1" -or $choice -eq "2" -or $choice -eq "") {
+    Write-ColorOutput ""
+    Write-Step "正在启动服务"
+    Write-Info "服务启动中，请稍候..."
     Write-Warning-Custom "按 Ctrl+C 可停止服务"
     Write-ColorOutput ""
+    
+    # 如果选择自动打开浏览器
+    if ($choice -eq "1" -or $choice -eq "") {
+        # 启动后台进程来延迟打开浏览器
+        Start-Job -ScriptBlock {
+            Start-Sleep -Seconds 5
+            Start-Process "http://127.0.0.1:5000"
+        } | Out-Null
+        Write-Success "浏览器将在5秒后自动打开..."
+    }
+    
+    # 启动Flask应用
     python run.py
+} elseif ($choice -eq "3") {
+    Write-ColorOutput ""
+    Write-Info "手动启动命令："
+    Write-ColorOutput "  cd $projectPath" "Cyan"
+    Write-ColorOutput "  .\.venv\Scripts\Activate.ps1" "Cyan"
+    Write-ColorOutput "  python run.py" "Cyan"
+    Write-ColorOutput ""
+    Write-Info "然后访问: http://127.0.0.1:5000"
+} else {
+    Write-Warning-Custom "无效选择，退出"
 }
+
+Write-ColorOutput ""
