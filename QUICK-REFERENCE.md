@@ -89,6 +89,8 @@ python scripts/change_admin_password.py
 ## ❓ 常见问题
 
 **Q: Windows提示"禁止运行脚本"？**
+
+脚本已自动处理此问题！如果仍然遇到，手动运行：
 ```powershell
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
@@ -103,6 +105,9 @@ chmod +x deploy_online.sh
 
 **Q: 端口5000被占用？**
 修改 `run.py` 中的端口号。
+
+**Q: 脚本会自动设置执行策略吗？**
+是的！所有Windows脚本都会在开始时自动检查并设置执行策略。
 
 ## 🆘 获取帮助
 

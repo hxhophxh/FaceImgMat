@@ -1,6 +1,24 @@
 # 离线部署准备脚本 (Windows PowerShell)
 # 此脚本帮助您准备完整的离线部署包
 
+# ===================================================================
+# 检查并设置PowerShell执行策略
+# ===================================================================
+$currentPolicy = Get-ExecutionPolicy -Scope CurrentUser
+if ($currentPolicy -eq "Restricted" -or $currentPolicy -eq "Undefined") {
+    Write-Host "检测到PowerShell执行策略限制，正在调整..." -ForegroundColor Yellow
+    try {
+        Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+        Write-Host "✓ 执行策略已设置为 RemoteSigned" -ForegroundColor Green
+    } catch {
+        Write-Host "⚠️  无法自动设置执行策略，请手动运行：" -ForegroundColor Yellow
+        Write-Host "   Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser" -ForegroundColor Cyan
+        Write-Host ""
+        Read-Host "按回车键继续（或Ctrl+C退出）"
+    }
+}
+
+Write-Host ""
 Write-Host "🚀 开始准备离线部署包..." -ForegroundColor Green
 Write-Host ""
 
