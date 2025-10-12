@@ -6,7 +6,7 @@ faiss-cpu==1.11.0
 opencv-python==4.8.1.78
 pillow==10.4.0
 numpy>=1.26.0
-scikit-learn==1.3.2
+scikit-learn>=1.3.0  # 移除精确版本，使用可用的最新版
 werkzeug==3.0.1
 python-multipart==0.0.6
 sqlalchemy==2.0.23
