@@ -35,6 +35,11 @@ Desktop.ini
 # ==========================================
 # 超级离线部署包 - 只排除大文件
 # ==========================================
+# 排除临时打包脚本
+prepare-user-package-minimal.ps1
+make-minimal-package.ps1
+temp-minimal-package/
+
 # 排除 Python 安装程序（~26MB）
 super-offline-deployment/01-Python安装包/*.exe
 
