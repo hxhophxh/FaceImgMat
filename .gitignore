@@ -32,6 +32,31 @@ Desktop.ini
 #  models/* - 包含AI模型（如果有）
 #  FaceImgMat-用户包*.zip - 用户包压缩文件（小于100MB）
 
-# 排除超级离线部署包（太大）
-super-offline-deployment/
-prepare-super-package*.ps1
+# ==========================================
+# 超级离线部署包 - 只排除大文件
+# ==========================================
+# 排除 Python 安装程序（~26MB）
+super-offline-deployment/01-Python安装包/*.exe
+
+# 排除 Python 依赖包（~200MB，100+个包）
+super-offline-deployment/03-Python依赖包/*.whl
+super-offline-deployment/03-Python依赖包/*.tar.gz
+super-offline-deployment/03-Python依赖包/*.zip
+
+# 排除 AI 模型文件（~500MB）
+super-offline-deployment/04-AI模型文件/insightface_models/*/*.onnx
+super-offline-deployment/04-AI模型文件/insightface_models/*.zip
+
+# 排除复制的项目源码（避免重复）
+super-offline-deployment/02-项目源码/FaceImgMat/
+
+# 保留以下文件（脚本、文档、README等）：
+# ✅ super-offline-deployment/*.bat
+# ✅ super-offline-deployment/*.ps1
+# ✅ super-offline-deployment/*.md
+# ✅ super-offline-deployment/*.txt
+# ✅ super-offline-deployment/00-使用说明/
+# ✅ super-offline-deployment/01-Python安装包/README.md
+# ✅ super-offline-deployment/02-项目源码/README.md
+# ✅ super-offline-deployment/03-Python依赖包/README.md
+# ✅ super-offline-deployment/04-AI模型文件/README.md
