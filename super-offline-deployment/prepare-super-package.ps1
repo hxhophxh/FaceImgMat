@@ -45,9 +45,118 @@ if (-not $Silent) {
 $SUPER_PKG_DIR = Split-Path -Parent $PSCommandPath
 $PROJECT_ROOT = Split-Path -Parent $SUPER_PKG_DIR
 
+# ===================================================================
+# 函数：检测 Python 3.12 环境
+# ===================================================================
+function Test-Python312 {
+    try {
+        $pythonVersion = python --version 2>&1
+        if ($pythonVersion -match "Python 3\.12\.") {
+            $fullVersion = $pythonVersion -replace "Python ", ""
+            Write-Host "[√] 检测到 Python 环境: $fullVersion" -ForegroundColor Green
+            return $true
+        } else {
+            Write-Host "[提示] 检测到 Python，但版本不是 3.12: $pythonVersion" -ForegroundColor Yellow
+            return $false
+        }
+    } catch {
+        Write-Host "[提示] 未检测到 Python 3.12 环境" -ForegroundColor Yellow
+        return $false
+    }
+}
+
+# ===================================================================
+# 函数：静默安装 Python 3.12.7
+# ===================================================================
+function Install-Python312 {
+    param(
+        [string]$InstallerPath
+    )
+    
+    Write-Host ""
+    Write-Host "════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
+    Write-Host "[临时安装] 正在安装 Python 3.12.7 用于下载依赖包..." -ForegroundColor Cyan
+    Write-Host "════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
+    Write-Host ""
+    Write-Host "[提示] 此安装仅用于准备离线包，不会影响您的系统" -ForegroundColor Yellow
+    Write-Host "[提示] 安装路径: C:\Python312-Temp" -ForegroundColor Yellow
+    Write-Host "[提示] 安装模式: 静默安装（不添加到 PATH）" -ForegroundColor Yellow
+    Write-Host ""
+    
+    $installPath = "C:\Python312-Temp"
+    
+    # 静默安装参数
+    $installArgs = @(
+        "/quiet",                    # 静默安装
+        "InstallAllUsers=0",         # 当前用户安装
+        "PrependPath=0",             # 不添加到 PATH
+        "Include_test=0",            # 不包含测试
+        "Include_doc=0",             # 不包含文档
+        "TargetDir=$installPath"     # 指定安装路径
+    )
+    
+    Write-Host "[执行] 开始静默安装..." -ForegroundColor Cyan
+    $process = Start-Process -FilePath $InstallerPath -ArgumentList $installArgs -Wait -PassThru -NoNewWindow
+    
+    if ($process.ExitCode -eq 0) {
+        Write-Host "[√] Python 3.12.7 安装完成" -ForegroundColor Green
+        
+        # 返回 Python 可执行文件路径
+        $pythonExe = Join-Path $installPath "python.exe"
+        if (Test-Path $pythonExe) {
+            Write-Host "[√] Python 路径: $pythonExe" -ForegroundColor Green
+            return $pythonExe
+        } else {
+            Write-Host "[错误] Python 安装后未找到可执行文件" -ForegroundColor Red
+            return $null
+        }
+    } else {
+        Write-Host "[错误] Python 安装失败，退出代码: $($process.ExitCode)" -ForegroundColor Red
+        return $null
+    }
+}
+
+# ===================================================================
+# 函数：清理临时 Python
+# ===================================================================
+function Remove-TempPython {
+    if ($script:needCleanup) {
+        Write-Host ""
+        Write-Host "[清理] 卸载临时 Python 环境..." -ForegroundColor Yellow
+        
+        $tempInstallPath = "C:\Python312-Temp"
+        
+        try {
+            if (Test-Path $tempInstallPath) {
+                Remove-Item -Path $tempInstallPath -Recurse -Force -ErrorAction Stop
+                Write-Host "[√] 临时 Python 环境已清理" -ForegroundColor Green
+            }
+        } catch {
+            Write-Host "[警告] 临时 Python 清理失败: $_" -ForegroundColor Yellow
+            Write-Host "[提示] 您可以手动删除: $tempInstallPath" -ForegroundColor Yellow
+        }
+    }
+}
+
 Write-Host "════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "[步骤 1/6] 创建目录结构..." -ForegroundColor Cyan
+Write-Host "[步骤 1/7] 检测 Python 环境..." -ForegroundColor Cyan
+Write-Host ""
+
+$hasPython312 = Test-Python312
+$pythonCommand = "python"
+$needCleanup = $false
+
+if (-not $hasPython312) {
+    Write-Host ""
+    Write-Host "[提示] 需要 Python 3.12 来下载依赖包" -ForegroundColor Yellow
+    Write-Host "[提示] 将先下载并临时安装 Python 3.12.7" -ForegroundColor Yellow
+}
+Write-Host ""
+
+Write-Host "════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "[步骤 2/7] 创建目录结构..." -ForegroundColor Cyan
 Write-Host ""
 
 # 创建目录结构
@@ -71,7 +180,7 @@ Write-Host ""
 
 Write-Host "════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "[步骤 2/6] 下载 Python 3.12.7 安装程序..." -ForegroundColor Cyan
+Write-Host "[步骤 3/7] 下载 Python 3.12.7 安装程序..." -ForegroundColor Cyan
 Write-Host ""
 
 $pythonInstaller = Join-Path $SUPER_PKG_DIR "01-Python安装包\python-3.12.7-amd64.exe"
@@ -79,25 +188,70 @@ $pythonInstaller = Join-Path $SUPER_PKG_DIR "01-Python安装包\python-3.12.7-am
 if (Test-Path $pythonInstaller) {
     Write-Host "[√] Python 安装程序已存在，跳过下载" -ForegroundColor Yellow
 } else {
-    Write-Host "[提示] 正在从 python.org 下载 Python 3.12.7..." -ForegroundColor Yellow
-    Write-Host "[提示] 文件大小约 26MB，请耐心等待..." -ForegroundColor Yellow
+    Write-Host "[提示] 文件大小约 26MB，正在尝试多个镜像源..." -ForegroundColor Yellow
     Write-Host ""
     
-    $pythonUrl = "https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe"
+    # 多个镜像源（国内镜像优先，速度更快）
+    $pythonUrls = @(
+        @{
+            Name = "华为云镜像"
+            Url = "https://repo.huaweicloud.com/python/3.12.7/python-3.12.7-amd64.exe"
+        },
+        @{
+            Name = "淘宝镜像"
+            Url = "https://registry.npmmirror.com/-/binary/python/3.12.7/python-3.12.7-amd64.exe"
+        },
+        @{
+            Name = "清华大学镜像"
+            Url = "https://mirrors.tuna.tsinghua.edu.cn/python-releases/3.12.7/python-3.12.7-amd64.exe"
+        },
+        @{
+            Name = "Python 官方"
+            Url = "https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe"
+        }
+    )
     
-    try {
-        Invoke-WebRequest -Uri $pythonUrl -OutFile $pythonInstaller -UseBasicParsing
-        Write-Host "[√] Python 安装程序下载完成" -ForegroundColor Green
+    $downloaded = $false
+    foreach ($source in $pythonUrls) {
+        Write-Host "[尝试] 从 $($source.Name) 下载..." -ForegroundColor Cyan
         
-        $size = (Get-Item $pythonInstaller).Length / 1MB
-        Write-Host "[√] 文件大小: $([math]::Round($size, 2)) MB" -ForegroundColor Green
-    } catch {
-        Write-Host "[错误] Python 安装程序下载失败: $_" -ForegroundColor Red
+        try {
+            # 使用 BITS (后台智能传输服务) 下载，支持断点续传和更好的性能
+            Start-BitsTransfer -Source $source.Url -Destination $pythonInstaller -Description "下载 Python 3.12.7" -ErrorAction Stop
+            
+            Write-Host "[√] Python 安装程序下载完成（来源: $($source.Name)）" -ForegroundColor Green
+            
+            $size = (Get-Item $pythonInstaller).Length / 1MB
+            Write-Host "[√] 文件大小: $([math]::Round($size, 2)) MB" -ForegroundColor Green
+            $downloaded = $true
+            break
+        } catch {
+            Write-Host "[×] $($source.Name) 下载失败: $($_.Exception.Message)" -ForegroundColor Yellow
+            
+            # 清理失败的下载文件
+            if (Test-Path $pythonInstaller) {
+                Remove-Item $pythonInstaller -Force -ErrorAction SilentlyContinue
+            }
+            
+            # 如果不是最后一个源，继续尝试下一个
+            if ($source -ne $pythonUrls[-1]) {
+                Write-Host "[提示] 尝试下一个镜像源..." -ForegroundColor Yellow
+                Write-Host ""
+            }
+        }
+    }
+    
+    if (-not $downloaded) {
+        Write-Host ""
+        Write-Host "[错误] 所有镜像源下载均失败！" -ForegroundColor Red
         Write-Host ""
         Write-Host "[建议] 请手动下载 Python 3.12.7 安装程序到:" -ForegroundColor Yellow
         Write-Host "  $pythonInstaller" -ForegroundColor Yellow
         Write-Host ""
-        Write-Host "下载地址: $pythonUrl" -ForegroundColor Cyan
+        Write-Host "[下载地址选择]:" -ForegroundColor Cyan
+        foreach ($source in $pythonUrls) {
+            Write-Host "  - $($source.Name): $($source.Url)" -ForegroundColor Gray
+        }
         exit 1
     }
 }
@@ -138,9 +292,29 @@ $pythonReadme | Out-File -FilePath (Join-Path $SUPER_PKG_DIR "01-Python安装包
 Write-Host "[√] 创建 Python 安装说明" -ForegroundColor Green
 Write-Host ""
 
+# ===================================================================
+# 如果当前环境没有 Python 3.12，则临时安装
+# ===================================================================
+if (-not $hasPython312) {
+    $tempPythonExe = Install-Python312 -InstallerPath $pythonInstaller
+    
+    if ($null -eq $tempPythonExe) {
+        Write-Host ""
+        Write-Host "[错误] Python 安装失败，无法继续下载依赖包" -ForegroundColor Red
+        Write-Host "[建议] 请手动安装 Python 3.12 后重新运行此脚本" -ForegroundColor Yellow
+        Remove-TempPython
+        exit 1
+    }
+    
+    # 使用临时安装的 Python
+    $pythonCommand = $tempPythonExe
+    $needCleanup = $true
+    Write-Host ""
+}
+
 Write-Host "════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "[步骤 3/6] 复制项目源码..." -ForegroundColor Cyan
+Write-Host "[步骤 4/7] 复制项目源码..." -ForegroundColor Cyan
 Write-Host ""
 
 $projectDst = Join-Path $SUPER_PKG_DIR "02-项目源码\FaceImgMat"
@@ -181,13 +355,14 @@ if ($result.ExitCode -le 8) {
     Write-Host "[√] 项目源码复制完成" -ForegroundColor Green
 } else {
     Write-Host "[错误] 项目源码复制失败" -ForegroundColor Red
+    Remove-TempPython
     exit 1
 }
 Write-Host ""
 
 Write-Host "════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "[步骤 4/6] 下载 Python 依赖包..." -ForegroundColor Cyan
+Write-Host "[步骤 5/7] 下载 Python 依赖包..." -ForegroundColor Cyan
 Write-Host ""
 
 $packagesDir = Join-Path $SUPER_PKG_DIR "03-Python依赖包"
@@ -195,6 +370,7 @@ $requirementsFile = Join-Path $projectDst "requirements.txt"
 
 if (!(Test-Path $requirementsFile)) {
     Write-Host "[错误] 未找到 requirements.txt 文件" -ForegroundColor Red
+    Remove-TempPython
     exit 1
 }
 
@@ -206,7 +382,7 @@ Write-Host ""
 
 # 下载依赖包（为Python 3.12下载，优先wheel包，包含所有传递依赖）
 # 使用 --python-version 确保下载正确版本的包
-python -m pip download -r $requirementsFile -d $packagesDir -i https://pypi.tuna.tsinghua.edu.cn/simple --prefer-binary --python-version 3.12 --only-binary=:all: 2>&1 | ForEach-Object {
+& $pythonCommand -m pip download -r $requirementsFile -d $packagesDir -i https://pypi.tuna.tsinghua.edu.cn/simple --prefer-binary --python-version 3.12 --only-binary=:all: 2>&1 | ForEach-Object {
     $line = $_.ToString()
     if ($line -match "Collecting|Downloading|Saved|Successfully downloaded") {
         Write-Host $line -ForegroundColor Gray
@@ -224,13 +400,14 @@ if ($LASTEXITCODE -eq 0) {
     Write-Host "[√] 总大小: $([math]::Round($size, 2)) MB" -ForegroundColor Green
 } else {
     Write-Host "[错误] 依赖包下载失败" -ForegroundColor Red
+    Remove-TempPython
     exit 1
 }
 Write-Host ""
 
 Write-Host "════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "[步骤 5/6] 复制 InsightFace 模型..." -ForegroundColor Cyan
+Write-Host "[步骤 6/7] 复制 InsightFace 模型..." -ForegroundColor Cyan
 Write-Host ""
 
 $modelsSrc = Join-Path $env:USERPROFILE ".insightface\models"
@@ -257,7 +434,7 @@ Write-Host ""
 
 Write-Host "════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "[步骤 6/6] 验证离线包完整性..." -ForegroundColor Cyan
+Write-Host "[步骤 7/7] 验证离线包完整性..." -ForegroundColor Cyan
 Write-Host ""
 
 $checkItems = @{
@@ -280,6 +457,16 @@ foreach ($item in $checkItems.GetEnumerator()) {
 Write-Host ""
 
 if ($allGood) {
+    # ===================================================================
+    # 清理临时安装的 Python（如果有）
+    # ===================================================================
+    if ($needCleanup) {
+        Write-Host "════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
+        Write-Host ""
+        Remove-TempPython
+        Write-Host ""
+    }
+    
     Write-Host "════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "╔════════════════════════════════════════════════════════════════╗" -ForegroundColor Green
@@ -313,5 +500,6 @@ if ($allGood) {
     
 } else {
     Write-Host "[错误] 离线包准备未完成，请检查上方错误信息" -ForegroundColor Red
+    Remove-TempPython
     exit 1
 }
