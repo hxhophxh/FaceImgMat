@@ -312,7 +312,35 @@ docker pull hxhophxh/faceimgmat:latest
 docker-compose up -d
 ```
 
-## 🔐 安全提醒
+## �️ 防病毒软件误报说明
+
+⚠️ **重要提示**：从 GitHub 下载 ZIP 包时，Windows Defender 或其他防病毒软件可能会误报病毒警告。
+
+**这是误报！** 本项目完全安全、开源、透明。
+
+### 为什么会误报？
+
+防病毒软件将包含以下特征的脚本标记为可疑：
+- 批处理文件静默安装 Python（`/quiet` 参数）
+- PowerShell 脚本下载文件（`Start-BitsTransfer`）
+- 自动化部署流程
+
+### 如何处理？
+
+**推荐方案**：
+1. 使用 `git clone` 而不是下载 ZIP（通常不会误报）
+2. 将项目文件夹添加到防病毒软件白名单
+3. 手动检查脚本内容（所有代码公开透明）
+
+**详细说明**：查看 [安全声明文档](SECURITY-NOTICE.md)
+
+所有下载源都是官方可信任的：
+- Python 官方：python.org
+- 华为云镜像：repo.huaweicloud.com
+- 清华大学镜像：mirrors.tuna.tsinghua.edu.cn
+- 淘宝镜像：registry.npmmirror.com
+
+## �🔐 安全提醒
 
 ⚠️ **首次部署后必须执行以下操作：**
 
