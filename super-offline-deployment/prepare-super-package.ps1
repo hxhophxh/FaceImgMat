@@ -78,21 +78,21 @@ function Install-Python312 {
     Write-Host "[临时安装] 正在安装 Python 3.12.7 用于下载依赖包..." -ForegroundColor Cyan
     Write-Host "════════════════════════════════════════════════════════════════" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "[提示] 此安装仅用于准备离线包，不会影响您的系统" -ForegroundColor Yellow
-    Write-Host "[提示] 安装路径: C:\Python312-Temp" -ForegroundColor Yellow
-    Write-Host "[提示] 安装模式: 静默安装（不添加到 PATH）" -ForegroundColor Yellow
+    Write-Host "[提示] 此安装仅用于准备离线包，完成后会自动清理" -ForegroundColor Yellow
+    Write-Host "[提示] 安装路径: D:\Python312-Temp" -ForegroundColor Yellow
+    Write-Host "[提示] 安装模式: 静默安装（自动添加到环境变量）" -ForegroundColor Yellow
     Write-Host ""
     
-    $installPath = "C:\Python312-Temp"
+    $installPath = "D:\Python312-Temp"
     
     # 静默安装参数
     $installArgs = @(
         "/quiet",                    # 静默安装
         "InstallAllUsers=0",         # 当前用户安装
-        "PrependPath=0",             # 不添加到 PATH
+        "PrependPath=1",             # 添加到 PATH（方便使用）
         "Include_test=0",            # 不包含测试
         "Include_doc=0",             # 不包含文档
-        "TargetDir=$installPath"     # 指定安装路径
+        "TargetDir=$installPath"     # 指定安装路径到 D 盘
     )
     
     Write-Host "[执行] 开始静默安装..." -ForegroundColor Cyan
@@ -124,7 +124,7 @@ function Remove-TempPython {
         Write-Host ""
         Write-Host "[清理] 卸载临时 Python 环境..." -ForegroundColor Yellow
         
-        $tempInstallPath = "C:\Python312-Temp"
+        $tempInstallPath = "D:\Python312-Temp"
         
         try {
             if (Test-Path $tempInstallPath) {
@@ -264,27 +264,38 @@ $pythonReadme = @"
 ╚════════════════════════════════════════════════════════════════╝
 
 📦 本目录包含：
-   python-3.11.9-amd64.exe  (约 25MB)
+   python-3.12.7-amd64.exe  (约 26MB)
 
 🎯 安装方法：
 
 方法1：自动安装（推荐）
    运行上级目录的「一键完整部署.bat」会自动安装
+   - 自动安装到 D:\Python312
+   - 自动添加到系统环境变量
+   - 无需任何手动操作
 
 方法2：手动安装
-   1. 双击 python-3.11.9-amd64.exe
+   1. 双击 python-3.12.7-amd64.exe
    2. 勾选 "Add Python to PATH"
-   3. 选择 "Install Now"
-   4. 等待安装完成
+   3. 点击 "Customize installation"
+   4. 修改安装路径为 D:\Python312（推荐）
+   5. 完成安装
 
 ✅ 验证安装：
    打开命令提示符，输入：python --version
-   应该显示：Python 3.11.9
+   应该显示：Python 3.12.7
 
 ⚠️  注意事项：
-   - 安装路径: C:\Program Files\Python311
+   - 推荐安装路径: D:\Python312（避免 C 盘空间不足）
    - 需要约 150MB 磁盘空间
-   - 建议以管理员身份安装
+   - 会自动添加到系统环境变量
+   - 建议以管理员身份运行安装
+
+💡 为什么安装到 D 盘？
+   - C 盘通常空间有限，系统文件较多
+   - D 盘有更多可用空间
+   - 避免权限问题
+   - 便于管理和备份
 
 "@
 

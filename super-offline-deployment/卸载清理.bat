@@ -127,11 +127,14 @@ if /i "%UNINSTALL_PYTHON%"=="Y" (
     echo.
     echo [提示] Python 卸载需要手动操作：
     echo   1. 打开「控制面板」→「程序和功能」
-    echo   2. 找到「Python 3.11.9」
+    echo   2. 找到「Python 3.12.7」
     echo   3. 右键 →「卸载」
     echo.
     echo [提示] 或使用 Windows 设置：
-    echo   设置 → 应用 → 应用和功能 → Python 3.11.9 → 卸载
+    echo   设置 → 应用 → 应用和功能 → Python 3.12.7 → 卸载
+    echo.
+    echo [提示] 或手动删除安装目录：
+    echo   D:\Python312（如果安装在此位置）
     echo.
     set /p OPEN_SETTINGS="是否打开「程序和功能」？(Y/N): "
     if /i "!OPEN_SETTINGS!"=="Y" (

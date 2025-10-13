@@ -108,11 +108,12 @@ echo [√] 找到 Python 安装包: !PYTHON_INSTALLER!
 echo.
 echo [提示] 正在安装 Python 3.12.7...
 echo [提示] 这可能需要 2-5 分钟，请耐心等待...
-echo [提示] 安装位置: C:\Program Files\Python312
+echo [提示] 安装位置: D:\Python312
+echo [提示] 自动添加到系统环境变量
 echo.
 
-REM 静默安装Python
-"%PYTHON_INSTALLER%" /quiet InstallAllUsers=1 PrependPath=1 Include_test=0
+REM 静默安装Python到 D 盘，并添加到环境变量
+"%PYTHON_INSTALLER%" /quiet InstallAllUsers=1 PrependPath=1 Include_test=0 TargetDir=D:\Python312
 
 REM 等待安装完成
 timeout /t 5 /nobreak >nul
@@ -125,15 +126,18 @@ timeout /t 2 /nobreak >nul
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
     echo [警告] Python 命令不可用，尝试使用完整路径...
-    if exist "C:\Program Files\Python311\python.exe" (
-        set "PYTHON_CMD=C:\Program Files\Python311\python.exe"
+    if exist "D:\Python312\python.exe" (
+        set "PYTHON_CMD=D:\Python312\python.exe"
         echo [√] 找到 Python: !PYTHON_CMD!
-    ) else if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" (
-        set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python311\python.exe"
+    ) else if exist "C:\Program Files\Python312\python.exe" (
+        set "PYTHON_CMD=C:\Program Files\Python312\python.exe"
+        echo [√] 找到 Python: !PYTHON_CMD!
+    ) else if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
+        set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
         echo [√] 找到 Python: !PYTHON_CMD!
     ) else (
         echo [错误] Python 安装失败！
-        echo [建议] 请手动安装 Python 3.11，然后运行「仅部署项目.bat」
+        echo [建议] 请手动安装 Python 3.12，然后重新运行此脚本
         echo.
         pause
         exit /b 1
