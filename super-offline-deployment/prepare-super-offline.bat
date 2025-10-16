@@ -8,10 +8,11 @@ chcp 65001 >nul
 echo.
 echo ================================================================
 echo.
-echo   FaceImgMat Super Offline Package Preparation
+echo   FaceImgMat Super Offline Bundle Builder
 echo.
-echo   This will download Python installer and all dependencies
-echo   Estimated time: 20-30 minutes
+echo   This will snapshot the validated .venv, models, and installer
+echo   Estimated time: 3-8 minutes (no large downloads)
+echo   Advanced: use prepare-super-package.ps1 -SkipZip / -ZipTool SevenZip
 echo.
 echo ================================================================
 echo.
@@ -27,10 +28,22 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+REM Detect preferred compression tool so BAT 调用也能触发进度条
+set "ZIP_TOOL_PARAM="
+where 7z.exe >nul 2>&1
+if %errorlevel%==0 set "ZIP_TOOL_PARAM=-ZipTool SevenZip"
+if not defined ZIP_TOOL_PARAM if exist "C:\Program Files\7-Zip\7z.exe" set "ZIP_TOOL_PARAM=-ZipTool SevenZip"
+if not defined ZIP_TOOL_PARAM if exist "C:\Program Files (x86)\7-Zip\7z.exe" set "ZIP_TOOL_PARAM=-ZipTool SevenZip"
+if defined ZIP_TOOL_PARAM (
+    echo [INFO] Detected 7-Zip, enabling zip progress UI...
+) else (
+    echo [INFO] 7-Zip not found, falling back to auto tool selection.
+)
+
 REM Run the re-encoded script in silent mode
-echo [INFO] Starting download and preparation...
+echo [INFO] Collecting local environment and building bundle...
 echo.
-powershell -ExecutionPolicy Bypass -NoProfile -File "%~dp0prepare-super-package-temp.ps1" -Silent
+powershell -ExecutionPolicy Bypass -NoProfile -File "%~dp0prepare-super-package-temp.ps1" -Silent %ZIP_TOOL_PARAM%
 
 set SCRIPT_EXIT_CODE=%errorlevel%
 
@@ -53,8 +66,8 @@ echo [SUCCESS] Super offline package preparation completed!
 echo ================================================================
 echo.
 echo Next steps:
-echo 1. Compress the entire super-offline-deployment folder
-echo 2. Transfer to target machine
-echo 3. Run the deployment script
+echo 1. Verify offline_bundle.zip or offline_bundle/ folder is generated
+echo 2. Upload the ZIP (or manually compressed archive) to GitHub Release / targets
+echo 3. Distribute together with updated deployment scripts
 echo.
 pause

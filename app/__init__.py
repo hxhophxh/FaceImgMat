@@ -45,7 +45,11 @@ def create_app():
             db.session.add(admin)
             db.session.commit()
         
-        # 构建FAISS索引
-        face_matcher.build_index()
+        # 构建FAISS索引（此时数据库可能为空）
+        try:
+            face_matcher.build_index()
+        except Exception as e:
+            # 离线环境若模型缺失先忽略，后续首次调用特征提取再提示
+            print(f"[Warn] 初始索引构建失败: {e}")
     
     return app

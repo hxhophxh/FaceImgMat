@@ -1,13 +1,13 @@
 flask==3.0.0
 flask-login==0.6.3
 flask-sqlalchemy==3.1.1
-insightface  # 移除版本限制，使用最新版
 faiss-cpu==1.11.0
 opencv-python==4.8.1.78
 pillow==10.4.0
-numpy>=1.26.0
-scikit-learn>=1.3.0  # 移除精确版本，使用可用的最新版
+numpy==1.26.4
+scikit-learn==1.7.2
 werkzeug==3.0.1
 python-multipart==0.0.6
 sqlalchemy==2.0.23
-onnxruntime  # insightface 的依赖
+onnxruntime==1.23.1
+insightface==0.7.3

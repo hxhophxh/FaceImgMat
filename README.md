@@ -179,6 +179,9 @@ chmod +x deploy_online.sh
 
 ### 2. 安装依赖
 
+> ⚠️ **依赖版本提示**: 本项目要求 NumPy 1.26.4（与 OpenCV 兼容）。  
+> 详见 [依赖版本说明](super-offline-deployment/DEPENDENCY-VERSION-NOTES.md)
+
 ```bash
 # 创建虚拟环境
 python -m venv .venv

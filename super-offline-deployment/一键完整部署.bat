@@ -1,365 +1,287 @@
 @echo off
-REM ====================================================================
-REM FaceImgMat 超级离线一键完整部署脚本
-REM 适用于完全没有Python环境的全新机器
-REM ====================================================================
 chcp 65001 >nul
-setlocal EnableDelayedExpansion
-
+setlocal EnableExtensions EnableDelayedExpansion
+title FaceImgMat 离线一键部署+自动启动（终极完整版·修复版）
 echo.
-echo ╔════════════════════════════════════════════════════════════════╗
-echo ║                                                                ║
-echo ║     FaceImgMat 人脸识别系统 - 超级离线一键部署                 ║
-echo ║                                                                ║
-echo ║     适用于完全没有Python环境的全新机器                          ║
-echo ║                                                                ║
-echo ╚════════════════════════════════════════════════════════════════╝
-echo.
-echo [提示] 本脚本将自动完成以下操作：
-echo.
-echo   [1/7] 检测并安装 Python 3.11
-echo   [2/7] 创建 Python 虚拟环境
-echo   [3/7] 安装所有 Python 依赖包
-echo   [4/7] 配置 InsightFace AI 模型
-echo   [5/7] 初始化数据库
-echo   [6/7] 启动人脸识别服务
-echo   [7/7] 自动打开浏览器
-echo.
-echo [预计时间] 15-25 分钟（取决于机器性能）
-echo.
-echo ════════════════════════════════════════════════════════════════
+echo ================================================================
+echo   FaceImgMat - 离线一键部署并自动启动服务（终极完整版·修复版）
+echo ================================================================
 echo.
 
-REM 获取脚本所在目录
+:: ==== 选择起始步骤 ====
+:choose_start
+set "START_STEP="
+if "%~1"=="" (
+    set /p "START_STEP=请选择开始步骤 0-7（按回车从第 0 步开始）: "
+    if "!START_STEP!"=="" set "START_STEP=0"
+) else (
+    set "START_STEP=%~1"
+)
+set /a START_STEP=START_STEP 2>nul
+if !START_STEP! lss 0 set "START_STEP=0"
+if !START_STEP! gtr 7 set "START_STEP=7"
+set /a CURRENT_STEP=0
+echo [信息] 将从第 !START_STEP! 步开始执行
+
+:: ==== 基础路径 ====
 set "SCRIPT_DIR=%~dp0"
 set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
+set "BUNDLE_NAME=offline_bundle"
+set "BUNDLE_ARCHIVE=%BUNDLE_NAME%.zip"
+set "BUNDLE_PATH=%SCRIPT_DIR%\%BUNDLE_ARCHIVE%"
+set "BUNDLE_DIR=%SCRIPT_DIR%\%BUNDLE_NAME%"
+set "BUNDLE_URL=https://github.com/hxhophxh/FaceImgMat/releases/latest/download/offline_bundle.zip"
 
-REM 检查目录结构
-echo [√] 检查部署包完整性...
-if not exist "%SCRIPT_DIR%\01-Python安装包" (
-    echo [错误] 未找到 01-Python安装包 目录！
-    echo.
-    pause
-    exit /b 1
-)
-if not exist "%SCRIPT_DIR%\02-项目源码\FaceImgMat" (
-    echo [错误] 未找到 02-项目源码\FaceImgMat 目录！
-    echo.
-    pause
-    exit /b 1
-)
-if not exist "%SCRIPT_DIR%\03-Python依赖包" (
-    echo [错误] 未找到 03-Python依赖包 目录！
-    echo.
-    pause
-    exit /b 1
-)
-echo [√] 部署包完整性检查通过
-echo.
+set "PYTHON_VERSION_TARGET=3.12"
+set "PYTHON_INSTALLER_NAME=python-3.12.7-amd64.exe"
+set "SERVICE_PORT=5000"
+set "SERVICE_URL=http://127.0.0.1:%SERVICE_PORT%"
 
-echo ════════════════════════════════════════════════════════════════
+:: ##############################################################################
+:: 步骤 0/7  准备离线包（含下载）
+:: ##############################################################################
+if !CURRENT_STEP! lss !START_STEP! goto :step0_done
+echo [步骤 0/7] 准备离线包...
+if exist "%BUNDLE_DIR%" call :clean_with_spinner "%BUNDLE_DIR%"
+if not exist "%BUNDLE_PATH%" (
+    echo [信息] 本地未发现 %BUNDLE_ARCHIVE% ，准备下载...
+    call :download_with_spinner "%BUNDLE_URL%" "%BUNDLE_PATH%"
+)
+call :unzip_with_retry "%BUNDLE_PATH%" "%SCRIPT_DIR%"
+if exist "%SCRIPT_DIR%\%BUNDLE_NAME%\%BUNDLE_NAME%" (
+    robocopy "%SCRIPT_DIR%\%BUNDLE_NAME%\%BUNDLE_NAME%" "%SCRIPT_DIR%\%BUNDLE_NAME%" /E /MOVE /NP /NFL /NDL /NJH /NJS >nul
+    rmdir "%SCRIPT_DIR%\%BUNDLE_NAME%\%BUNDLE_NAME%" 2>nul
+)
+echo [成功] 离线包已准备: %BUNDLE_DIR%
 echo.
-echo [步骤 1/7] 检测 Python 环境...
-echo.
+:step0_done
+set /a CURRENT_STEP+=1
 
-REM 检测Python是否已安装
-python --version >nul 2>&1
-if %errorlevel% equ 0 (
-    echo [√] 检测到已安装的 Python
-    for /f "tokens=2" %%i in ('python --version 2^>^&1') do set PYTHON_VERSION=%%i
-    echo [√] Python 版本: !PYTHON_VERSION!
-    echo.
-    
-    REM 检查版本是否为3.11或3.12
-    echo !PYTHON_VERSION! | findstr /R "3\.11\. 3\.12\." >nul
-    if !errorlevel! equ 0 (
-        echo [√] Python 版本符合要求（3.11 或 3.12）
-        echo [提示] 跳过 Python 安装步骤
-        set PYTHON_CMD=python
-        goto :SKIP_PYTHON_INSTALL
-    ) else (
-        echo [警告] Python 版本不符合要求，需要安装 Python 3.11
-        echo [提示] 将安装到独立目录，不影响现有Python
-        echo.
-    )
+:: ==== 预定义路径 ====
+set "PROJECT_DIR=%BUNDLE_DIR%\FaceImgMat"
+set "SITE_PACKAGES_SRC=%BUNDLE_DIR%\site-packages"
+set "MODELS_SRC=%BUNDLE_DIR%\models\insightface_models"
+set "PY_INSTALLER=%BUNDLE_DIR%\python\%PYTHON_INSTALLER_NAME%"
+set "LOCK_FILE=%BUNDLE_DIR%\requirements.lock"
+if not exist "%PROJECT_DIR%" (
+    echo [错误] 离线包缺少 FaceImgMat 项目源码
+    pause & exit /b 1
 )
 
-echo [提示] 未检测到 Python 或版本不符合要求
-echo [提示] 准备安装 Python 3.11.9...
-echo.
-
-REM 查找Python安装包
-set "PYTHON_INSTALLER="
-for %%F in ("%SCRIPT_DIR%\01-Python安装包\python-*.exe") do (
-    set "PYTHON_INSTALLER=%%F"
-    goto :FOUND_INSTALLER
-)
-
-:FOUND_INSTALLER
-if not defined PYTHON_INSTALLER (
-    echo [错误] 未找到 Python 安装包！
-    echo [提示] 请确保 01-Python安装包 目录中有 python-*.exe 文件
-    echo.
-    pause
-    exit /b 1
-)
-
-echo [√] 找到 Python 安装包: !PYTHON_INSTALLER!
-echo.
-echo [提示] 正在安装 Python 3.12.7...
-echo [提示] 这可能需要 2-5 分钟，请耐心等待...
-echo [提示] 安装位置: D:\Python312
-echo [提示] 自动添加到系统环境变量
-echo.
-
-REM 静默安装Python到 D 盘，并添加到环境变量
-"%PYTHON_INSTALLER%" /quiet InstallAllUsers=1 PrependPath=1 Include_test=0 TargetDir=D:\Python312
-
-REM 等待安装完成
-timeout /t 5 /nobreak >nul
-
-REM 刷新环境变量
-call refreshenv >nul 2>&1
-
-REM 再次检测Python
-timeout /t 2 /nobreak >nul
-python --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [警告] Python 命令不可用，尝试使用完整路径...
-    if exist "D:\Python312\python.exe" (
-        set "PYTHON_CMD=D:\Python312\python.exe"
-        echo [√] 找到 Python: !PYTHON_CMD!
-    ) else if exist "C:\Program Files\Python312\python.exe" (
-        set "PYTHON_CMD=C:\Program Files\Python312\python.exe"
-        echo [√] 找到 Python: !PYTHON_CMD!
-    ) else if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
-        set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
-        echo [√] 找到 Python: !PYTHON_CMD!
-    ) else (
-        echo [错误] Python 安装失败！
-        echo [建议] 请手动安装 Python 3.12，然后重新运行此脚本
-        echo.
-        pause
-        exit /b 1
-    )
-) else (
-    set "PYTHON_CMD=python"
-    echo [√] Python 安装成功！
-)
-
-echo.
-"%PYTHON_CMD%" --version
-echo.
-
-:SKIP_PYTHON_INSTALL
-
-echo ════════════════════════════════════════════════════════════════
-echo.
-echo [步骤 2/7] 创建 Python 虚拟环境...
-echo.
-
-REM 进入项目目录
-cd /d "%SCRIPT_DIR%\02-项目源码\FaceImgMat"
-if %errorlevel% neq 0 (
-    echo [错误] 无法进入项目目录！
-    pause
-    exit /b 1
-)
-
-echo [√] 当前目录: %CD%
-echo.
-
-REM 删除旧的虚拟环境（如果存在）
-if exist ".venv" (
-    echo [提示] 删除旧的虚拟环境...
-    rmdir /s /q .venv
-)
-
-echo [提示] 创建新的虚拟环境...
-"%PYTHON_CMD%" -m venv .venv
-if %errorlevel% neq 0 (
-    echo [错误] 虚拟环境创建失败！
-    pause
-    exit /b 1
-)
-
-echo [√] 虚拟环境创建成功
-echo.
-
-REM 激活虚拟环境
-call .venv\Scripts\activate.bat
-if %errorlevel% neq 0 (
-    echo [错误] 虚拟环境激活失败！
-    pause
-    exit /b 1
-)
-
-echo [√] 虚拟环境已激活
-echo.
-
-echo ════════════════════════════════════════════════════════════════
-echo.
-echo [步骤 3/7] 安装 Python 依赖包（这是最耗时的步骤）...
-echo.
-
-set "PACKAGES_DIR=%SCRIPT_DIR%\03-Python依赖包"
-echo [提示] 依赖包位置: !PACKAGES_DIR!
-echo [提示] 正在统计包数量...
-
-REM 统计包数量
-set PKG_COUNT=0
-for %%F in ("!PACKAGES_DIR!\*.whl") do set /a PKG_COUNT+=1
-echo [√] 找到 !PKG_COUNT! 个依赖包
-echo.
-
-echo [提示] 升级 pip...
-python -m pip install --upgrade pip --no-index --find-links="!PACKAGES_DIR!" --quiet
-if %errorlevel% equ 0 (
-    echo [√] pip 升级成功
-) else (
-    echo [警告] pip 升级失败，继续使用当前版本
-)
-echo.
-
-echo [提示] 安装依赖包（约 5-10 分钟）...
-echo [提示] 进度显示：
-echo.
-
-python -m pip install -r requirements.txt --no-index --find-links="!PACKAGES_DIR!"
-
-if %errorlevel% neq 0 (
-    echo.
-    echo [错误] 依赖包安装失败！
-    echo [建议] 检查 03-Python依赖包 目录是否包含所有必需的包
-    pause
-    exit /b 1
-)
-
-echo.
-echo [√] 所有依赖包安装完成！
-echo.
-
-REM 验证关键包
-echo [提示] 验证关键依赖...
-python -c "import flask; import insightface; import cv2; import faiss" >nul 2>&1
-if %errorlevel% equ 0 (
-    echo [√] 关键依赖验证通过
-) else (
-    echo [警告] 部分依赖可能未正确安装，但继续尝试部署
-)
-echo.
-
-echo ════════════════════════════════════════════════════════════════
-echo.
-echo [步骤 4/7] 配置 InsightFace AI 模型...
-echo.
-
-set "MODELS_SRC=%SCRIPT_DIR%\04-AI模型文件\insightface_models"
-set "MODELS_DST=%USERPROFILE%\.insightface\models"
-
-if exist "!MODELS_SRC!" (
-    echo [提示] 模型源目录: !MODELS_SRC!
-    echo [提示] 模型目标目录: !MODELS_DST!
-    echo.
-    
-    echo [提示] 创建目标目录...
-    if not exist "!MODELS_DST!" (
-        mkdir "!MODELS_DST!" 2>nul
-    )
-    
-    echo [提示] 复制模型文件（约 2-3 分钟）...
-    xcopy "!MODELS_SRC!" "!MODELS_DST!" /E /I /Y /Q
-    
-    if %errorlevel% equ 0 (
-        echo [√] 模型文件配置成功
-        echo.
-        echo [提示] 已安装的模型：
-        dir "!MODELS_DST!" /B /AD
-        echo.
-    ) else (
-        echo [警告] 模型文件复制失败，首次运行时会自动下载（需要网络）
-        echo.
-    )
-) else (
-    echo [警告] 未找到离线模型文件
-    echo [提示] 首次运行时会自动下载（需要网络）
-    echo.
-)
-
-echo ════════════════════════════════════════════════════════════════
-echo.
-echo [步骤 5/7] 初始化数据库...
-echo.
-
-REM 创建必要目录
-echo [提示] 创建必要目录...
-if not exist "instance" mkdir instance
-if not exist "static\faces" mkdir static\faces
-if not exist "static\uploads" mkdir static\uploads
-if not exist "logs" mkdir logs
-if not exist "models" mkdir models
-echo [√] 目录结构创建完成
-echo.
-
-REM 检查数据库
-if exist "instance\face_matching.db" (
-    echo [√] 检测到已有数据库
-    echo [提示] 跳过数据库初始化
-) else (
-    echo [提示] 初始化数据库...
-    if exist "scripts\init_demo_data.py" (
-        python scripts\init_demo_data.py
-        if %errorlevel% equ 0 (
-            echo [√] 数据库初始化成功
-        ) else (
-            echo [警告] 数据库初始化失败，但不影响系统运行
+:: ##############################################################################
+:: 步骤 1/7  检查 / 安装 Python
+:: ##############################################################################
+if !CURRENT_STEP! lss !START_STEP! goto :step1_done
+echo [步骤 1/7] 检查/安装 Python %PYTHON_VERSION_TARGET%...
+set "PYTHON_CMD="
+for %%p in (
+    "D:\Python312\python.exe"
+    "C:\Program Files\Python312\python.exe"
+    "%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
+) do if exist "%%~p" set "PYTHON_CMD=%%~p"
+if not defined PYTHON_CMD (
+    python --version >nul 2>&1 && (
+        for /f "tokens=2" %%v in ('python --version') do (
+            echo %%v | findstr /R "^3\.12\." >nul && set "PYTHON_CMD=python"
         )
-    ) else (
-        echo [警告] 未找到初始化脚本
     )
 )
-echo.
+if defined PYTHON_CMD (
+    echo [成功] 检测到 Python: !PYTHON_CMD!
+) else (
+    echo [信息] 未找到 Python 3.12，准备使用离线包中的安装程序...
+    if not exist "%PY_INSTALLER%" (
+        echo [错误] 离线包缺少 %PYTHON_INSTALLER_NAME% ，无法自动安装 Python
+        pause & exit /b 1
+    )
+    if exist "D:\" (set "TARGET_PY_DIR=D:\Python312") else set "TARGET_PY_DIR=%SystemDrive%\Python312"
+    call :install_python_with_spinner "%PY_INSTALLER%" "%TARGET_PY_DIR%"
+    set "PYTHON_CMD=%TARGET_PY_DIR%\python.exe"
+    echo [成功] Python 安装完成: !PYTHON_CMD!
+)
+:step1_done
+set /a CURRENT_STEP+=1
 
-echo ════════════════════════════════════════════════════════════════
-echo.
-echo [步骤 6/7] 启动人脸识别服务...
-echo.
+:: ##############################################################################
+:: 步骤 2/7  准备项目目录
+:: ##############################################################################
+if !CURRENT_STEP! lss !START_STEP! goto :step2_done
+echo [步骤 2/7] 准备项目目录...
+cd /d "%PROJECT_DIR%" || (
+    echo [错误] 无法进入项目目录: %PROJECT_DIR%
+    pause & exit /b 1
+)
+echo [成功] 当前目录: !CD!
+if exist ".venv" call :clean_with_spinner ".venv"
+if exist "%LOCK_FILE%" copy "%LOCK_FILE%" "%PROJECT_DIR%\requirements.lock" >nul
+:step2_done
+set /a CURRENT_STEP+=1
 
-echo [√] 所有准备工作已完成！
-echo.
-echo ╔════════════════════════════════════════════════════════════════╗
-echo ║                                                                ║
-echo ║                  🎉 部署成功！                                 ║
-echo ║                                                                ║
-echo ╚════════════════════════════════════════════════════════════════╝
-echo.
-echo [系统信息]
-echo   项目路径: %CD%
-echo   访问地址: http://127.0.0.1:5000
-echo   默认账号: admin
-echo   默认密码: Admin@FaceMatch2025!
-echo.
-echo [安全提醒]
-echo   ⚠️  首次登录后请立即修改管理员密码！
-echo   修改方法: python scripts\change_admin_password.py
-echo.
-echo ════════════════════════════════════════════════════════════════
-echo.
-echo [步骤 7/7] 启动服务并打开浏览器...
-echo.
-echo [提示] 正在启动 Flask 服务...
-echo [提示] 服务启动后会自动打开浏览器
-echo [提示] 按 Ctrl+C 可停止服务
-echo.
+:: ##############################################################################
+:: 步骤 3/7  创建虚拟环境（修复版）
+:: ##############################################################################
+if !CURRENT_STEP! lss !START_STEP! goto :step3_done
+echo [步骤 3/7] 创建虚拟环境...
+if not exist "%PYTHON_CMD%" (
+    echo [错误] Python 命令未找到: %PYTHON_CMD%
+    pause & exit /b 1
+)
+call :create_venv_with_spinner "%PYTHON_CMD%" "%PROJECT_DIR%"
+set "VENV_PY=%PROJECT_DIR%\.venv\Scripts\python.exe"
+set "VENV_SITE=%PROJECT_DIR%\.venv\Lib\site-packages"
+echo [成功] 虚拟环境已创建
+:step3_done
+set /a CURRENT_STEP+=1
 
-REM 后台启动浏览器
-start /B cmd /c "timeout /t 5 /nobreak >nul && start http://127.0.0.1:5000"
+:: ##############################################################################
+:: 步骤 4/7  安装依赖（优先使用 wheels 目录，失败再同步 site-packages）
+:: ##############################################################################
+if !CURRENT_STEP! lss !START_STEP! goto :step4_done
+echo [步骤 4/7] 安装依赖...
+set "INSTALL_STATUS=0"
+set "WHEELS_DIR=%BUNDLE_DIR%\wheels"
 
-REM 启动Flask服务（前台运行）
-python run.py
+if exist "%WHEELS_DIR%" (
+    echo [信息] 检测到 wheels 目录，优先离线安装...
+    "%VENV_PY%" -m pip install --no-index --find-links "%WHEELS_DIR%" -r requirements.lock
+    if !errorlevel! equ 0 (
+        set "INSTALL_STATUS=1"
+        echo [成功] pip 离线安装完成
+    ) else (
+        echo [警告] pip 安装失败，将 fallback 到 site-packages 同步
+    )
+)
 
-REM 如果服务意外退出
+if "!INSTALL_STATUS!"=="0" (
+    echo [信息] 使用 site-packages 同步方式...
+    call :sync_site_packages "%SITE_PACKAGES_SRC%" "%VENV_SITE%"
+    if errorlevel 1 (
+        pause & exit /b 1
+    )
+)
+
+if not exist "%VENV_SITE%\flask" (
+    echo [错误] Flask 依赖未正确安装，请检查离线包是否完整
+    pause & exit /b 1
+)
+echo [成功] 依赖安装完成
+:step4_done
+set /a CURRENT_STEP+=1
+
+:: ##############################################################################
+:: 步骤 5/7  拷贝模型文件
+:: ##############################################################################
+if !CURRENT_STEP! lss !START_STEP! goto :step5_done
+echo [步骤 5/7] 拷贝模型文件...
+if exist "%MODELS_SRC%" (
+    xcopy /E /I /Q /Y "%MODELS_SRC%" "models\insightface_models" >nul
+    if errorlevel 1 (
+        echo [错误] 模型文件拷贝失败
+        pause & exit /b 1
+    )
+)
+:step5_done
+set /a CURRENT_STEP+=1
+
+:: ##############################################################################
+:: 步骤 6/7  部署完成
+:: ##############################################################################
+if !CURRENT_STEP! lss !START_STEP! goto :step6_done
+echo [步骤 6/7] 部署完成！
+:step6_done
+set /a CURRENT_STEP+=1
+
+:: ##############################################################################
+:: 步骤 7/7  启动服务并打开浏览器
+:: ##############################################################################
+if !CURRENT_STEP! lss !START_STEP! goto :step7_done
+echo [步骤 7/7] 正在启动 FaceImgMat 服务并打开浏览器...
+if not exist "%PROJECT_DIR%\start.bat" (
+    echo [错误] 未找到 %PROJECT_DIR%\start.bat，无法启动服务！
+    pause & exit /b 1
+)
+start "" "%PROJECT_DIR%\start.bat"
+timeout /t 3 /nobreak >nul
+start "" "%SERVICE_URL%"
+echo [成功] 服务已启动并打开浏览器！
+:step7_done
+
 echo.
-echo [提示] 服务已停止
-echo.
+echo 尽情享受 FaceImgMat 吧！
 pause
+exit /b
+
+:: ========================================================================
+:: 通用子程序
+:: ========================================================================
+:clean_with_spinner
+set "TARGET=%~1"
+if not exist "%TARGET%" exit /b
+echo | set /p="[清理] %TARGET% ..."
+rmdir /s /q "%TARGET%"
+echo 完成
+exit /b
+
+:unzip_with_retry
+set "ARCHIVE=%~1"
+set "DEST=%~2"
+:retry_unzip
+echo | set /p="[解压] %ARCHIVE% ..."
+powershell -Command "try { Expand-Archive -Path '%ARCHIVE%' -DestinationPath '%DEST%' -Force -ErrorAction Stop } catch { exit 1 }"
+if errorlevel 1 (
+    echo 失败，ZIP 可能损坏，正在重新下载...
+    del /f "%ARCHIVE%" 2>nul
+    call :download_with_spinner "%BUNDLE_URL%" "%ARCHIVE%"
+    goto retry_unzip
+)
+echo 完成
+exit /b
+
+:create_venv_with_spinner
+set "PY=%~1"
+set "DIR=%~2"
+if not exist "%PY%" (
+    echo [错误] Python 解释器未找到: %PY%
+    exit /b 1
+)
+echo | set /p="[venv] 创建虚拟环境 ..."
+cd /d "%DIR%"
+"%PY%" -m venv .venv
+echo 完成
+exit /b
+
+:install_python_with_spinner
+set "INSTALLER=%~1"
+set "TARGET_DIR=%~2"
+echo | set /p="[Python] 安装中 ..."
+"%INSTALLER%" /quiet InstallAllUsers=0 TargetDir="%TARGET_DIR%" AssociateFiles=0 PrependPath=1
+echo 完成
+exit /b
+
+:download_with_spinner
+set "URL=%~1"
+set "OUTPUT=%~2"
+echo | set /p="[下载] %URL% ..."
+powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%URL%' -OutFile '%OUTPUT%'"
+echo 完成
+exit /b
+
+:sync_site_packages
+set "SRC=%~1"
+set "DST=%~2"
+if not exist "%SRC%" (
+    echo [错误] 离线包缺少 site-packages 目录: "%SRC%"
+    exit /b 1
+)
+if not exist "%DST%" (
+    mkdir "%DST%" 2>nul
+)
+echo [信息] 正在同步 site-packages 到虚拟环境...
+:: 下面一行是关键，确保路径含空格也能正确解析
+robocopy "%SRC%" "%DST%" /MIR /XD __pycache__ /XF *.pyc /NP /NFL /NDL /NJH /NJS /R:3 /W:2 >nul
+if %errorlevel% GEQ 8 (
+    echo [错误] robocopy 同步失败，退出码: %errorlevel%
+    exit /b 1
+)
+echo [成功] site-packages 同步完成
+exit /b 0

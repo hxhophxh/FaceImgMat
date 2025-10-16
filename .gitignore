@@ -47,6 +47,26 @@ super-offline-deployment/01-Python安装包/*.exe
 super-offline-deployment/03-Python依赖包/*.whl
 super-offline-deployment/03-Python依赖包/*.tar.gz
 super-offline-deployment/03-Python依赖包/*.zip
+super-offline-deployment/03-Python依赖包/site-packages/
+super-offline-deployment/03-Python依赖包/wheels/
+
+# 排除大的AI模型文件
+super-offline-deployment/04-AI模型文件/*.zip
+super-offline-deployment/04-AI模型文件/*.onnx
+super-offline-deployment/04-AI模型文件/insightface_models/
+*.onnx
+
+# 排除离线部署包和备份文件
+super-offline-deployment/offline_bundle.zip
+super-offline-deployment/offline_bundle/
+super-offline-deployment/offline_bundle.bak/
+super-offline-deployment/bak/
+
+# 排除依赖检查临时文件
+*.tmp
+
+# 排除虚拟环境
+.venv/
 
 # 排除 AI 模型文件（~500MB）
 super-offline-deployment/04-AI模型文件/insightface_models/*/*.onnx

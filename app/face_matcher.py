@@ -1,96 +1,102 @@
-import insightface
-import faiss
+"""人脸特征提取与搜索封装。
+
+通过惰性（lazy）初始化，避免在应用启动阶段因 insightface/模型 缺失而直接崩溃，
+同时为离线部署提供更清晰的错误反馈。
+"""
+
+import os
+import traceback
 import numpy as np
 import cv2
-from app.models import Person, db
+import faiss
+import insightface
+from app.models import Person
+
 
 class FaceMatcher:
     def __init__(self):
-        # 初始化InsightFace
-        self.app = insightface.app.FaceAnalysis(providers=['CPUExecutionProvider'])
-        self.app.prepare(ctx_id=0, det_size=(640, 640))
-        
-        # 初始化FAISS索引
+        self._ready = False
+        self.error = None
         self.dimension = 512
         self.index = faiss.IndexFlatL2(self.dimension)
-        self.id_mapping = {}  # FAISS索引 -> Person ID
-        
-    def extract_features(self, image_path):
-        """提取人脸特征"""
+        self.id_mapping = {}
+        # 延迟加载 insightface 模型
+
+    def _ensure_ready(self):
+        if self._ready:
+            return True
         try:
-            # 使用支持中文路径的方式读取图片
+            # 检查模型目录（离线部署提前复制）
+            user_home = os.path.expanduser('~')
+            model_dir = os.path.join(user_home, '.insightface', 'models', 'buffalo_l')
+            missing_files = []
+            for f in ['det_10g.onnx', 'w600k_r50.onnx', 'glintr100.onnx']:
+                if not os.path.exists(os.path.join(model_dir, f)):
+                    missing_files.append(f)
+            if missing_files:
+                # 不阻塞初始化，insightface 会尝试下载，但离线环境给出明显提示
+                self.error = f"模型文件缺失: {', '.join(missing_files)} (目录: {model_dir})"
+            self.app = insightface.app.FaceAnalysis(
+                name='buffalo_l',
+                providers=['CPUExecutionProvider']
+            )
+            self.app.prepare(ctx_id=-1, det_size=(640, 640))
+            self._ready = True
+            return True
+        except Exception as e:
+            self.error = f"初始化失败: {e}"
+            traceback.print_exc()
+            return False
+
+    def extract_features(self, image_path):
+        if not self._ensure_ready():
+            return None, f"引擎未就绪: {self.error}"
+        try:
             img = cv2.imdecode(np.fromfile(image_path, dtype=np.uint8), cv2.IMREAD_COLOR)
-            
-            # 检查图片是否成功读取
-            if img is None:
-                return None, f"无法读取图片：{image_path}"
-            
-            # 检查图片是否为空
-            if img.size == 0:
-                return None, "图片内容为空"
-            
-            # 检测人脸
+            if img is None or img.size == 0:
+                return None, f"无法读取图片/为空: {image_path}"
             faces = self.app.get(img)
-            
-            if len(faces) == 0:
+            if not faces:
                 return None, "未检测到人脸"
-            
-            # 获取第一个人脸的特征向量
             embedding = faces[0].embedding
-            
-            # 检查特征向量是否有效
             if embedding is None or len(embedding) == 0:
                 return None, "特征提取失败"
-            
-            # 归一化
             embedding = embedding / np.linalg.norm(embedding)
             return embedding, None
-            
         except Exception as e:
-            return None, f"特征提取异常：{str(e)}"
-    
+            return None, f"特征提取异常: {e}"
+
     def build_index(self):
-        """构建FAISS索引"""
+        # 重建索引前清空
+        self.index = faiss.IndexFlatL2(self.dimension)
+        self.id_mapping = {}
         persons = Person.query.all()
-        
         for person in persons:
-            if person.feature_vector is not None:
-                vector = np.array(person.feature_vector).astype('float32')
-                self.index.add(vector.reshape(1, -1))
-                idx = self.index.ntotal - 1
-                self.id_mapping[idx] = person.id
-    
+            if person.feature_vector:
+                vector = np.array(person.feature_vector, dtype='float32')
+                if vector.shape[0] == self.dimension:
+                    self.index.add(vector.reshape(1, -1))
+                    self.id_mapping[self.index.ntotal - 1] = person.id
+
     def search(self, query_embedding, k=3, threshold=0.5):
-        """搜索最相似的k个人脸
-        
-        Args:
-            query_embedding: 查询人脸特征向量
-            k: 返回结果数量
-            threshold: 相似度阈值 (0-1)，默认0.5表示50%
-        """
-        query = np.array(query_embedding).astype('float32').reshape(1, -1)
+        if self.index.ntotal == 0:
+            return []
+        query = np.array(query_embedding, dtype='float32').reshape(1, -1)
         distances, indices = self.index.search(query, k)
-        
         results = []
         for dist, idx in zip(distances[0], indices[0]):
             if idx in self.id_mapping:
-                person_id = self.id_mapping[idx]
-                person = Person.query.get(person_id)
+                person = Person.query.get(self.id_mapping[idx])
                 if person:
-                    # 改进的相似度计算：使用余弦相似度转换
-                    # L2距离转相似度：similarity = 1 - (distance / 2)
-                    # 因为归一化向量的L2距离范围是[0, 2]
-                    similarity = max(0, 1 - (float(dist) / 2))
-                    
-                    # 只返回超过阈值的结果
+                    similarity = max(0.0, 1 - (float(dist) / 2))
                     if similarity >= threshold:
                         results.append({
                             'person': person,
                             'similarity': similarity,
                             'distance': float(dist)
                         })
-        
         return results
 
-# 全局实例
+
+# 单例惰性实例
 face_matcher = FaceMatcher()
