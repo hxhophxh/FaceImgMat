@@ -13,14 +13,14 @@ echo.
 :: === 任务选择（纯英文符号，无中文引号、无全角空格） ===
 echo 【请选择开始步骤】：
 echo   0   准备离线包（含下载）
-echo   0.5 检测并安装 VC++ 2015-2022 x64 运行库(onnxruntime 依赖)
-echo   1   检查/安装 Python
-echo   2   准备项目目录
-echo   3   创建虚拟环境
-echo   4   安装依赖
-echo   5   拷贝模型文件
-echo   6   部署完成
-echo   7   启动服务并打开浏览器
+echo   1   检测并安装 VC++ 2015-2022 x64 运行库(onnxruntime 依赖)
+echo   2   检查/安装 Python
+echo   3   准备项目目录
+echo   4   创建虚拟环境
+echo   5   安装依赖
+echo   6   拷贝模型文件
+echo   7   部署完成
+echo   8   启动服务并打开浏览器
 echo.
 
 :choose_start
@@ -31,14 +31,9 @@ if "%~1"=="" (
 ) else (
     set "START_STEP=%~1"
 )
-:: 识别 0.5
-if /i "!START_STEP!"=="0.5" (
-    set "START_STEP=1"
-) else (
-    set /a START_STEP=START_STEP 2>nul
-    if !START_STEP! lss 0 set "START_STEP=0"
-    if !START_STEP! gtr 7 set "START_STEP=7"
-)
+set /a START_STEP=START_STEP 2>nul
+if !START_STEP! lss 0 set "START_STEP=0"
+if !START_STEP! gtr 8 set "START_STEP=8"
 set /a CURRENT_STEP=0
 echo 【信息】将从第 !START_STEP! 步开始执行
 echo.
@@ -91,17 +86,17 @@ echo.
 set /a CURRENT_STEP+=1
 
 :: ##############################################################################
-:: 步骤 0.5  检测并安装 VC++ 2015-2022 x64 运行库（onnxruntime 依赖）
+:: 步骤 1  检测并安装 VC++ 2015-2022 x64 运行库（onnxruntime 依赖）
 :: ##############################################################################
-if !CURRENT_STEP! lss !START_STEP! goto :step0u5_done
-echo 【步骤 0.5】检测 VC++ 2015-2022 x64 运行库...
+if !CURRENT_STEP! lss !START_STEP! goto :step1_done
+echo 【步骤 1】检测 VC++ 2015-2022 x64 运行库...
 
 :: 注册表判存在
 set "VC_REG=HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
 reg query "%VC_REG%" /v "Installed" 2>nul | find "0x1" >nul
 if not errorlevel 1 (
     echo 【成功】已检测到 VC++ 2015-2022 x64 运行库，跳过安装。
-    goto :step0u5_done
+    goto :step1_done
 )
 
 :: 未安装则下载
@@ -112,7 +107,7 @@ call :download_with_spinner "%VC_URL%" "%VC_INSTALLER%"
 if not exist "%VC_INSTALLER%" (
     echo 【警告】下载失败，请手动安装：%VC_URL%
     pause
-    goto :step0u5_done
+    goto :step1_done
 )
 
 :: 静默安装
@@ -124,7 +119,7 @@ if errorlevel 1 (
 ) else (
     echo 【成功】VC++ 2015-2022 x64 运行库安装完成。
 )
-:step0u5_done
+:step1_done
 set /a CURRENT_STEP+=1
 
 :: === 预定义路径 ===
@@ -139,10 +134,10 @@ if not exist "%PROJECT_DIR%" (
 )
 
 :: ##############################################################################
-:: 步骤 1  检查 / 安装 Python
+:: 步骤 2  检查 / 安装 Python
 :: ##############################################################################
-if !CURRENT_STEP! lss !START_STEP! goto :step1_done
-echo 【步骤 1】检查/安装 Python %PYTHON_VERSION_TARGET%...
+if !CURRENT_STEP! lss !START_STEP! goto :step2_done
+echo 【步骤 2】检查/安装 Python %PYTHON_VERSION_TARGET%...
 set "PYTHON_CMD="
 for %%p in (
     "D:\Python312\python.exe"
@@ -169,14 +164,14 @@ if defined PYTHON_CMD (
     set "PYTHON_CMD=%TARGET_PY_DIR%\python.exe"
     echo 【成功】Python 安装完成: !PYTHON_CMD!
 )
-:step1_done
+:step2_done
 set /a CURRENT_STEP+=1
 
 :: ##############################################################################
-:: 步骤 2  准备项目目录
+:: 步骤 3  准备项目目录
 :: ##############################################################################
-if !CURRENT_STEP! lss !START_STEP! goto :step2_done
-echo 【步骤 2】准备项目目录...
+if !CURRENT_STEP! lss !START_STEP! goto :step3_done
+echo 【步骤 3】准备项目目录...
 cd /d "%PROJECT_DIR%" || (
     echo 【错误】无法进入项目目录: %PROJECT_DIR%
     pause & exit /b 1
@@ -184,14 +179,14 @@ cd /d "%PROJECT_DIR%" || (
 echo 【成功】当前目录: !CD!
 if exist ".venv" call :clean_with_spinner ".venv"
 if exist "%LOCK_FILE%" copy "%LOCK_FILE%" "%PROJECT_DIR%\requirements.lock" >nul
-:step2_done
+:step3_done
 set /a CURRENT_STEP+=1
 
 :: ##############################################################################
-:: 步骤 3  创建虚拟环境
+:: 步骤 4  创建虚拟环境
 :: ##############################################################################
-if !CURRENT_STEP! lss !START_STEP! goto :step3_done
-echo 【步骤 3】创建虚拟环境...
+if !CURRENT_STEP! lss !START_STEP! goto :step4_done
+echo 【步骤 4】创建虚拟环境...
 if not exist "%PYTHON_CMD%" (
     echo 【错误】Python 命令未找到: %PYTHON_CMD%
     pause & exit /b 1
@@ -200,14 +195,14 @@ call :create_venv_with_spinner "%PYTHON_CMD%" "%PROJECT_DIR%"
 set "VENV_PY=%PROJECT_DIR%\.venv\Scripts\python.exe"
 set "VENV_SITE=%PROJECT_DIR%\.venv\Lib\site-packages"
 echo 【成功】虚拟环境已创建
-:step3_done
+:step4_done
 set /a CURRENT_STEP+=1
 
 :: ##############################################################################
-:: 步骤 4  安装依赖
+:: 步骤 5  安装依赖
 :: ##############################################################################
-if !CURRENT_STEP! lss !START_STEP! goto :step4_done
-echo 【步骤 4】安装依赖...
+if !CURRENT_STEP! lss !START_STEP! goto :step5_done
+echo 【步骤 5】安装依赖...
 set "INSTALL_STATUS=0"
 set "WHEELS_DIR=%BUNDLE_DIR%\wheels"
 
@@ -235,14 +230,14 @@ if not exist "%VENV_SITE%\flask" (
     pause & exit /b 1
 )
 echo 【成功】依赖安装完成
-:step4_done
+:step5_done
 set /a CURRENT_STEP+=1
 
 :: ##############################################################################
-:: 步骤 5  拷贝模型文件
+:: 步骤 6  拷贝模型文件
 :: ##############################################################################
-if !CURRENT_STEP! lss !START_STEP! goto :step5_done
-echo 【步骤 5】拷贝模型文件...
+if !CURRENT_STEP! lss !START_STEP! goto :step6_done
+echo 【步骤 6】拷贝模型文件...
 if exist "%MODELS_SRC%" (
     xcopy /E /I /Q /Y "%MODELS_SRC%" "models\insightface_models" >nul
     if errorlevel 1 (
@@ -250,14 +245,14 @@ if exist "%MODELS_SRC%" (
         pause & exit /b 1
     )
 )
-:step5_done
+:step6_done
 set /a CURRENT_STEP+=1
 
 :: ##############################################################################
-:: 步骤 6  部署完成
+:: 步骤 7  部署完成
 :: ##############################################################################
-if !CURRENT_STEP! lss !START_STEP! goto :step6_done
-echo 【步骤 6】部署完成！
+if !CURRENT_STEP! lss !START_STEP! goto :step7_done
+echo 【步骤 7】部署完成！
 
 :: 创建桌面快捷方式
 set "DESKTOP=%USERPROFILE%\Desktop"
@@ -265,14 +260,14 @@ set "START_BAT=%BUNDLE_DIR%\FaceImgMat\start.bat"
 set "SHORTCUT=%DESKTOP%\FaceImgMat.lnk"
 powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%SHORTCUT%'); $Shortcut.TargetPath = '%START_BAT%'; $Shortcut.WorkingDirectory = '%BUNDLE_DIR%\FaceImgMat'; $Shortcut.Save()"
 echo 【提示】启动快捷方式已创建到桌面：%SHORTCUT%
-:step6_done
+:step7_done
 set /a CURRENT_STEP+=1
 
 :: ##############################################################################
-:: 步骤 7  启动服务并打开浏览器
+:: 步骤 8  启动服务并打开浏览器
 :: ##############################################################################
-if !CURRENT_STEP! lss !START_STEP! goto :step7_done
-echo 【步骤 7】正在启动 FaceImgMat 服务并打开浏览器...
+if !CURRENT_STEP! lss !START_STEP! goto :step8_done
+echo 【步骤 8】正在启动 FaceImgMat 服务并打开浏览器...
 if not exist "%START_BAT%" (
     echo 【错误】未找到 %START_BAT%，无法启动服务！
     pause & exit /b 1
@@ -281,7 +276,7 @@ start "" "%START_BAT%"
 timeout /t 6 /nobreak >nul
 start "" "%SERVICE_URL%"
 echo 【成功】服务已启动并打开浏览器！
-:step7_done
+:step8_done
 
 echo.
 echo 尽情享受 FaceImgMat 吧！
