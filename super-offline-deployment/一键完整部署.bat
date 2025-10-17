@@ -1,25 +1,26 @@
 @echo off
-:: 强制使用 UTF-8 代码页，解决中文乱码
+:: 强制 UTF-8，解决中文乱码
 chcp 65001 >nul
 setlocal EnableExtensions EnableDelayedExpansion
-title FaceImgMat 离线一键部署+自动启动（UTF-8 原生中文版）
+title FaceImgMat 离线一键部署+自动启动（UTF-8 完整版·含VC运行库）
 
 echo.
 echo ================================================================
-echo   FaceImgMat - 离线一键部署并自动启动服务（UTF-8 原生中文版）
+echo   FaceImgMat - 离线一键部署并自动启动服务（UTF-8 完整版·含VC运行库）
 echo ================================================================
 echo.
 
-:: === 任务选择 ===
+:: === 任务选择（已加入 0.5） ===
 echo 【请选择开始步骤】：
-echo   0 - 准备离线包（含下载）
-echo   1 - 检查/安装 Python
-echo   2 - 准备项目目录
-echo   3 - 创建虚拟环境
-echo   4 - 安装依赖
-echo   5 - 拷贝模型文件
-echo   6 - 部署完成
-echo   7 - 启动服务并打开浏览器
+echo   0   - 准备离线包（含下载）
+echo   0.5 - 检测并安装 VC++ 2015-2022 x64 运行库（onnxruntime 依赖）
+echo   1   - 检查/安装 Python
+echo   2   - 准备项目目录
+echo   3   - 创建虚拟环境
+echo   4   - 安装依赖
+echo   5   - 拷贝模型文件
+echo   6   - 部署完成
+echo   7   - 启动服务并打开浏览器
 echo.
 
 :choose_start
@@ -30,9 +31,14 @@ if "%~1"=="" (
 ) else (
     set "START_STEP=%~1"
 )
-set /a START_STEP=START_STEP 2>nul
-if !START_STEP! lss 0 set "START_STEP=0"
-if !START_STEP! gtr 7 set "START_STEP=7"
+:: 允许 0.5 输入
+if "!START_STEP!"=="0.5" (
+    set "START_STEP=1"
+) else (
+    set /a START_STEP=START_STEP 2>nul
+    if !START_STEP! lss 0 set "START_STEP=0"
+    if !START_STEP! gtr 7 set "START_STEP=7"
+)
 set /a CURRENT_STEP=0
 echo 【信息】将从第 !START_STEP! 步开始执行
 echo.
@@ -69,6 +75,43 @@ if exist "%SCRIPT_DIR%\%BUNDLE_NAME%\%BUNDLE_NAME%" (
 echo 【成功】离线包已准备: %BUNDLE_DIR%
 echo.
 :step0_done
+set /a CURRENT_STEP+=1
+
+:: ##############################################################################
+:: 步骤 0.5  检测并安装 VC++ 2015-2022 x64 运行库（onnxruntime 依赖）
+:: ##############################################################################
+if !CURRENT_STEP! lss !START_STEP! goto :step0u5_done
+echo 【步骤 0.5】检测 VC++ 2015-2022 x64 运行库...
+
+:: 注册表判存在
+set "VC_REG=HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+reg query "%VC_REG%" /v "Installed" 2>nul | find "0x1" >nul
+if not errorlevel 1 (
+    echo 【成功】已检测到 VC++ 2015-2022 x64 运行库，跳过安装。
+    goto :step0u5_done
+)
+
+:: 未安装则下载
+set "VC_URL=https://aka.ms/vs/17/release/vc_redist.x64.exe"
+set "VC_INSTALLER=%SCRIPT_DIR%\vc_redist.x64.exe"
+echo 【信息】未检测到运行库，正在下载...
+call :download_with_spinner "%VC_URL%" "%VC_INSTALLER%"
+if not exist "%VC_INSTALLER%" (
+    echo 【警告】下载失败，请手动安装：%VC_URL%
+    pause
+    goto :step0u5_done
+)
+
+:: 静默安装
+echo 【信息】正在静默安装 VC++ 运行库...
+"%VC_INSTALLER%" /quiet /norestart
+if errorlevel 1 (
+    echo 【警告】安装失败，请手动安装：%VC_INSTALLER%
+    pause
+) else (
+    echo 【成功】VC++ 2015-2022 x64 运行库安装完成。
+)
+:step0u5_done
 set /a CURRENT_STEP+=1
 
 :: === 预定义路径 ===
@@ -203,8 +246,7 @@ set /a CURRENT_STEP+=1
 if !CURRENT_STEP! lss !START_STEP! goto :step6_done
 echo 【步骤 6】部署完成！
 
-:: === 创建桌面快捷方式（目标：offline_bundle\FaceImgMat\start.bat） ===
-echo 【信息】正在创建桌面快捷方式...
+:: 创建桌面快捷方式
 set "DESKTOP=%USERPROFILE%\Desktop"
 set "START_BAT=%BUNDLE_DIR%\FaceImgMat\start.bat"
 set "SHORTCUT=%DESKTOP%\FaceImgMat.lnk"
