@@ -2,25 +2,25 @@
 :: 强制 UTF-8，解决中文乱码
 chcp 65001 >nul
 setlocal EnableExtensions EnableDelayedExpansion
-title FaceImgMat 离线一键部署+自动启动（UTF-8 完整版·含VC运行库）
+title FaceImgMat 离线一键部署+自动启动
 
 echo.
 echo ================================================================
-echo   FaceImgMat - 离线一键部署并自动启动服务（UTF-8 完整版·含VC运行库）
+echo   FaceImgMat - 离线一键部署并自动启动服务
 echo ================================================================
 echo.
 
-:: === 任务选择（已加入 0.5） ===
+:: === 任务选择（纯英文符号，无中文引号、无全角空格） ===
 echo 【请选择开始步骤】：
-echo   0   - 准备离线包（含下载）
-echo   0.5 - 检测并安装 VC++ 2015-2022 x64 运行库（onnxruntime 依赖）
-echo   1   - 检查/安装 Python
-echo   2   - 准备项目目录
-echo   3   - 创建虚拟环境
-echo   4   - 安装依赖
-echo   5   - 拷贝模型文件
-echo   6   - 部署完成
-echo   7   - 启动服务并打开浏览器
+echo   0   准备离线包（含下载）
+echo   0.5 检测并安装 VC++ 2015-2022 x64 运行库(onnxruntime 依赖)
+echo   1   检查/安装 Python
+echo   2   准备项目目录
+echo   3   创建虚拟环境
+echo   4   安装依赖
+echo   5   拷贝模型文件
+echo   6   部署完成
+echo   7   启动服务并打开浏览器
 echo.
 
 :choose_start
@@ -31,8 +31,8 @@ if "%~1"=="" (
 ) else (
     set "START_STEP=%~1"
 )
-:: 允许 0.5 输入
-if "!START_STEP!"=="0.5" (
+:: 识别 0.5
+if /i "!START_STEP!"=="0.5" (
     set "START_STEP=1"
 ) else (
     set /a START_STEP=START_STEP 2>nul
@@ -58,16 +58,29 @@ set "SERVICE_PORT=5000"
 set "SERVICE_URL=http://127.0.0.1:%SERVICE_PORT%"
 
 :: ##############################################################################
-:: 步骤 0  准备离线包（含下载）
+:: 步骤 0  准备离线包（优先本地，失败再下载）
 :: ##############################################################################
 if !CURRENT_STEP! lss !START_STEP! goto :step0_done
 echo 【步骤 0】准备离线包...
-if exist "%BUNDLE_DIR%" call :clean_with_spinner "%BUNDLE_DIR%"
-if not exist "%BUNDLE_PATH%" (
-    echo 【信息】本地未发现 %BUNDLE_ARCHIVE% ，准备下载...
-    call :download_with_spinner "%BUNDLE_URL%" "%BUNDLE_PATH%"
+
+:: ① 若已存在 zip 先尝试解压，成功则跳过下载
+if exist "%BUNDLE_PATH%" (
+    echo 【信息】发现本地离线包，正在校验...
+    call :unzip_with_retry "%BUNDLE_PATH%" "%SCRIPT_DIR%"
+    if not errorlevel 1 (
+        echo 【成功】本地离线包解压完成，跳过下载。
+        goto :skip_download
+    )
+    echo 【警告】本地包损坏，将重新下载...
+    del /f "%BUNDLE_PATH%" 2>nul
 )
+
+:: ② 本地没有或解压失败才下载
+echo 【信息】本地未发现可用离线包，准备下载...
+call :download_with_spinner "%BUNDLE_URL%" "%BUNDLE_PATH%"
 call :unzip_with_retry "%BUNDLE_PATH%" "%SCRIPT_DIR%"
+
+:skip_download
 if exist "%SCRIPT_DIR%\%BUNDLE_NAME%\%BUNDLE_NAME%" (
     robocopy "%SCRIPT_DIR%\%BUNDLE_NAME%\%BUNDLE_NAME%" "%SCRIPT_DIR%\%BUNDLE_NAME%" /E /MOVE /NP /NFL /NDL /NJH /NJS >nul
     rmdir "%SCRIPT_DIR%\%BUNDLE_NAME%\%BUNDLE_NAME%" 2>nul
@@ -347,4 +360,4 @@ if %errorlevel% GEQ 8 (
     exit /b 1
 )
 echo done
-exit /b 0
+exit /b
