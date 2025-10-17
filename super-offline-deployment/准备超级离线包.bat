@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 REM FaceImgMat - 准备超级离线包
 REM 在有网络的机器上运行此脚本
 
@@ -17,8 +18,7 @@ powershell -ExecutionPolicy Bypass -NoProfile -Command "Get-Content '%~dp0prepar
 if %errorlevel% neq 0 (
     echo [错误] PowerShell 脚本准备失败
     pause
-    exit /b 1
-)
+    exit /b 1)
 
 powershell -ExecutionPolicy Bypass -NoProfile -File "%~dp0prepare-super-package-temp.ps1" -Silent
 set SCRIPT_EXIT_CODE=%errorlevel%
@@ -29,10 +29,8 @@ if %SCRIPT_EXIT_CODE% neq 0 (
     echo.
     echo [错误] 离线包准备失败
     pause
-    exit /b 1
-)
+    exit /b 1)
 
 echo.
 echo [完成] 按任意键退出...
 pause >nul
-echo.

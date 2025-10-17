@@ -8,6 +8,7 @@ param(
     [string]$BundleName = 'offline_bundle',
     [string]$VenvPath,
     [switch]$SkipZip,
+    [switch]$ShowRoboLog,          # 显示 robocopy 详细日志
     [ValidateSet('Optimal','Fastest','NoCompression')]
     [string]$CompressionLevel = 'Fastest',
     [ValidateSet('Auto','SevenZip','Tar','CompressArchive')]
@@ -56,41 +57,17 @@ function Invoke-ZipArchive {
     param(
         [string]$SourceDir,
         [string]$Destination,
-        [string]$CompressionLevel,
-        [string]$ZipTool,
-        [hashtable]$ResolvedTool
+        [string]$CompressionLevel
     )
-
     if (Test-Path -LiteralPath $Destination) { Remove-Item -LiteralPath $Destination -Force }
 
-    $activity = "压缩(Compress-Archive) -> $([System.IO.Path]::GetFileName($Destination))"
     $level = switch ($CompressionLevel) {
         'Optimal'       { 'Optimal' }
         'NoCompression' { 'NoCompression' }
         Default         { 'Fastest' }
     }
 
-    # 后台作业，防止进度条卡死
-    $job = Start-Job -ScriptBlock {
-        param($src, $dst, $lvl)
-        Compress-Archive -Path $src -DestinationPath $dst -Force -CompressionLevel $lvl
-    } -ArgumentList $SourceDir, $Destination, $level
-
-    $frames = '|','/','-','\'
-    $idx = 0
-    while ($true) {
-        $state = (Get-Job -Id $job.Id).State
-        if ($state -eq 'Completed' -or $state -eq 'Failed' -or $state -eq 'Stopped') { break }
-        $idx = ($idx + 1) % $frames.Length
-        Write-Progress -Activity $activity -Status ("处理中 " + $frames[$idx])
-        Start-Sleep -Milliseconds 120
-    }
-    Write-Progress -Activity $activity -Completed
-
-    Receive-Job -Id $job.Id -ErrorAction SilentlyContinue | Out-Null
-    $jobState = (Get-Job -Id $job.Id).State
-    Remove-Job -Id $job.Id -Force
-    if ($jobState -ne 'Completed') { throw "Compress-Archive 压缩失败，作业状态: $jobState" }
+    Compress-Archive -Path $SourceDir -DestinationPath $Destination -Force -CompressionLevel $level
 }
 
 # -------------------- 主流程 --------------------
@@ -137,6 +114,7 @@ Write-Section '步骤 2/6: 准备输出目录'
     $path = Join-Path $SUPER_PKG_DIR $_
     if (-not (Test-Path $path)) { $null = New-Item -ItemType Directory -Path $path }
 }
+Write-Host "[成功] 输出目录已准备" -ForegroundColor Green
 
 Write-Section '步骤 3/6: 准备 Python 安装程序'
 $pythonInstallerPath = Join-Path $SUPER_PKG_DIR (Join-Path '01-Python安装包' $pythonInstallerName)
@@ -163,13 +141,13 @@ if (Test-Path $pythonInstallerPath) {
 Write-Section '步骤 4/6: 复制项目源码'
 $projectDst = Join-Path $SUPER_PKG_DIR '02-项目源码\FaceImgMat'
 if (Test-Path $projectDst) { Remove-Item $projectDst -Recurse -Force }
-$robocopyArgs = @(
+$roboArgs = @(
     $PROJECT_ROOT, $projectDst, '/MIR',
     '/XD','.git','.venv','__pycache__','.vscode','.idea','node_modules','super-offline-deployment','offline_deployment_package','offline_bundle',
-    '/XF','*.pyc',
-    '/NFL','/NDL','/NJH','/NJS','/NC','/NS','/NP'
+    '/XF','*.pyc'
 )
-& robocopy @robocopyArgs | Out-Null
+if (-not $ShowRoboLog) { $roboArgs += @('/NFL','/NDL','/NJH','/NJS','/NC','/NS','/NP') }
+& robocopy @roboArgs
 if ($LASTEXITCODE -ge 8) { throw "robocopy 复制项目失败，退出码 $LASTEXITCODE" }
 Write-Host "[成功] 项目源码已复制" -ForegroundColor Green
 
@@ -192,7 +170,7 @@ if (Test-Path $requirementsPath) {
         $requiredNumpy = $requiredMatch.Groups[1].Value.Trim()
         Write-Host "[信息] requirements.txt 指定 NumPy 版本: $requiredNumpy" -ForegroundColor Cyan
         if ($requiredNumpy -and $currentNumpy -ne $requiredNumpy) {
-            throw "虚拟环境中的 NumPy 版本 $currentNumpy 与 requirements.txt 中的 $requiredNumpy 不一致，请先在虚拟环境中执行 .\\.venv\\Scripts\\python.exe -m pip install --force-reinstall numpy==$requiredNumpy"
+            throw "虚拟环境中的 NumPy 版本 $currentNumpy 与 requirements.txt 中的 $requiredNumpy 不一致，请先在虚拟环境中执行 .\.venv\Scripts\python.exe -m pip install --force-reinstall numpy==$requiredNumpy"
         }
     } else {
         Write-Host "[警告] requirements.txt 中未找到 numpy==X.Y.Z 的固定版本" -ForegroundColor Yellow
@@ -204,23 +182,49 @@ if (Test-Path $requirementsPath) {
 $packagesDir = Join-Path $SUPER_PKG_DIR '03-Python依赖包'
 if (Test-Path $packagesDir) { Remove-Item $packagesDir -Recurse -Force }
 $null = New-Item -ItemType Directory -Path $packagesDir
+
+# ---- 优先复用项目根目录的 requirements.lock ----
+$lockPath = Join-Path $packagesDir 'requirements.lock'
+$devLock  = Join-Path $PROJECT_ROOT 'requirements.lock'
+if (Test-Path $devLock) {
+    Write-Host "[拷贝] 发现项目根目录已有 requirements.lock，直接复用" -ForegroundColor Green
+    Copy-Item $devLock $lockPath -Force
+} else {
+    Write-Host "[生成] 项目根目录无 requirements.lock，现场 pip freeze 生成" -ForegroundColor Yellow
+    & $venvPython -m pip freeze | Set-Content -Path $lockPath -Encoding UTF8
+}
+
+# ---- 复制 site-packages ----
 $sitePackagesSrc = Join-Path $VenvPath 'Lib\site-packages'
-if (-not (Test-Path $sitePackagesSrc)) { throw "缺少 site-packages 目录: $sitePackagesSrc" }
 $sitePackagesDst = Join-Path $packagesDir 'site-packages'
 Write-Host "[信息] 正在复制 site-packages，请稍候..." -ForegroundColor Cyan
-& robocopy $sitePackagesSrc $sitePackagesDst /E /PURGE /XD __pycache__ /XF *.pyc | Write-Host
+$roboArgs = @($sitePackagesSrc, $sitePackagesDst, '/E', '/PURGE', '/XD', '__pycache__', '/XF', '*.pyc')
+if (-not $ShowRoboLog) { $roboArgs += @('/NFL','/NDL','/NJH','/NJS','/NC','/NS','/NP') }
+& robocopy @roboArgs
 if ($LASTEXITCODE -ge 8) { throw "复制 site-packages 失败，退出码 $LASTEXITCODE" }
 
-# ===== 新增：导出完整 wheel 包 =====
-Write-Host "[信息] 正在下载全部 wheel 到 wheels 子目录..." -ForegroundColor Cyan
+# ---- wheels 处理 ----
+Write-Host "[信息] 准备 wheels 子目录..." -ForegroundColor Cyan
 $wheelDir = Join-Path $packagesDir 'wheels'
-if (-not (Test-Path $wheelDir)) { $null = New-Item -ItemType Directory -Path $wheelDir }
+$devWheelDir = if (Test-Path (Join-Path $PROJECT_ROOT 'wheel')) {
+    Join-Path $PROJECT_ROOT 'wheel'
+} elseif (Test-Path (Join-Path $PROJECT_ROOT 'wheels')) {
+    Join-Path $PROJECT_ROOT 'wheels'
+} else { $null }
 
-# 先定义 lockPath 再使用
-$lockPath = Join-Path $packagesDir 'requirements.lock'
-& $venvPython -m pip freeze | Set-Content -Path $lockPath -Encoding UTF8
-& $venvPython -m pip download -r $lockPath -d $wheelDir --no-deps
-if ($LASTEXITCODE -ne 0) { Write-Warning "wheel 补全失败，部署端将 fallback 到 site-packages 拷贝" }
+if ($devWheelDir -and (Get-ChildItem -Path $devWheelDir -Filter '*.whl' -File).Count) {
+    Write-Host "[拷贝] 发现开发目录已有 wheels，直接复制: $devWheelDir" -ForegroundColor Green
+    if (-not (Test-Path $wheelDir)) { $null = New-Item -ItemType Directory -Path $wheelDir }
+    $roboArgs = @($devWheelDir, $wheelDir, '/MIR')
+    if (-not $ShowRoboLog) { $roboArgs += @('/NFL','/NDL','/NJH','/NJS','/NC','/NS','/NP') }
+    & robocopy @roboArgs
+    if ($LASTEXITCODE -ge 8) { throw "复制已有 wheels 失败" }
+} else {
+    Write-Host "[下载] 未找到可用本地 wheels，正在重新下载..." -ForegroundColor Yellow
+    if (-not (Test-Path $wheelDir)) { $null = New-Item -ItemType Directory -Path $wheelDir }
+    & $venvPython -m pip download -r $lockPath -d $wheelDir --no-deps
+    if ($LASTEXITCODE -ne 0) { Write-Warning "wheel 补全失败，部署端将 fallback 到 site-packages 拷贝" }
+}
 
 Write-Host "[成功] 虚拟环境依赖已导出" -ForegroundColor Green
 
@@ -297,8 +301,7 @@ if (-not $SkipZip) {
     Write-Host "[信息] 正在使用 Compress-Archive 压缩 -> $bundleZip (级别：$CompressionLevel)..." -ForegroundColor Cyan
     $sw = [System.Diagnostics.Stopwatch]::StartNew()
     try {
-        Invoke-ZipArchive -SourceDir $bundleRoot -Destination $bundleZip `
-                          -CompressionLevel $CompressionLevel -ZipTool 'CompressArchive' -ResolvedTool $resolvedTool
+        Invoke-ZipArchive -SourceDir $bundleRoot -Destination $bundleZip -CompressionLevel $CompressionLevel
     } catch {
         throw "压缩离线包失败: $($_.Exception.Message)"
     } finally {
@@ -309,6 +312,8 @@ if (-not $SkipZip) {
     Write-Host ("[成功] {0} 已生成，大小 {1}，耗时 {2}" -f $bundleZip, (Format-Bytes $zipSize), $sw.Elapsed.ToString('mm\:ss')) -ForegroundColor Green
 } else {
     Write-Host "[提示] 已跳过压缩，可手动打包 $bundleRoot" -ForegroundColor Yellow
+    Write-Host "      推荐命令（保持长路径）：" -ForegroundColor DarkYellow
+    Write-Host "      robocopy `"$bundleRoot`" <目标目录> /MIR" -ForegroundColor DarkYellow
     $bundleZip = $null
 }
 
