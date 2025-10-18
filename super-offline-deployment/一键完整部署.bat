@@ -2,11 +2,11 @@
 :: 强制 UTF-8，解决中文乱码
 chcp 65001 >nul
 setlocal EnableExtensions EnableDelayedExpansion
-title FaceImgMat 离线一键部署+自动启动
+title FaceImgMat 离线一键部署+自动启动（极简离线版）
 
 echo.
 echo ================================================================
-echo   FaceImgMat - 离线一键部署并自动启动服务
+echo   FaceImgMat - 离线一键部署并自动启动服务（极简离线版）
 echo ================================================================
 echo.
 
@@ -18,7 +18,7 @@ echo   2   检查/安装 Python
 echo   3   准备项目目录
 echo   4   创建虚拟环境
 echo   5   安装依赖
-echo   6   拷贝模型文件
+echo   6   预置 InsightFace 缓存模型（断网关键）
 echo   7   部署完成
 echo   8   启动服务并打开浏览器
 echo.
@@ -99,15 +99,21 @@ if not errorlevel 1 (
     goto :step1_done
 )
 
-:: 未安装则下载
+:: 未安装 -> 先尝试离线包自带，没有再下载
+set "VC_INSTALLER=%BUNDLE_DIR%\vc_redist\vc_redist.x64.exe"
 set "VC_URL=https://aka.ms/vs/17/release/vc_redist.x64.exe"
-set "VC_INSTALLER=%SCRIPT_DIR%\vc_redist.x64.exe"
-echo 【信息】未检测到运行库，正在下载...
-call :download_with_spinner "%VC_URL%" "%VC_INSTALLER%"
-if not exist "%VC_INSTALLER%" (
-    echo 【警告】下载失败，请手动安装：%VC_URL%
-    pause
-    goto :step1_done
+
+if exist "%VC_INSTALLER%" (
+    echo 【信息】未检测到运行库，使用离线包自带安装程序...
+) else (
+    echo 【信息】离线包未含 vc_redist.x64.exe，准备联网下载...
+    set "VC_INSTALLER=%SCRIPT_DIR%\vc_redist.x64.exe"
+    call :download_with_spinner "%VC_URL%" "%VC_INSTALLER%"
+    if not exist "%VC_INSTALLER%" (
+        echo 【警告】下载失败，请手动安装：%VC_URL%
+        pause
+        goto :step1_done
+    )
 )
 
 :: 静默安装
@@ -144,13 +150,21 @@ for %%p in (
     "C:\Program Files\Python312\python.exe"
     "%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
 ) do if exist "%%~p" set "PYTHON_CMD=%%~p"
+
 if not defined PYTHON_CMD (
     python --version >nul 2>&1 && (
         for /f "tokens=2" %%v in ('python --version') do (
-            echo %%v | findstr /R "^3\.12\." >nul && set "PYTHON_CMD=python"
+            echo %%v | findstr /R "^3\.12\." >nul && (
+                :: 关键修复：把裸命令解析成绝对路径
+                for /f "delims=" %%i in ('where python 2^>nul') do (
+                    set "PYTHON_CMD=%%~fi"
+                    goto :python_found
+                )
+            )
         )
     )
 )
+:python_found
 if defined PYTHON_CMD (
     echo 【成功】检测到 Python: !PYTHON_CMD!
 ) else (
@@ -234,17 +248,37 @@ echo 【成功】依赖安装完成
 set /a CURRENT_STEP+=1
 
 :: ##############################################################################
-:: 步骤 6  拷贝模型文件
+:: 步骤 6  预置 InsightFace 缓存模型（断网关键）
 :: ##############################################################################
 if !CURRENT_STEP! lss !START_STEP! goto :step6_done
-echo 【步骤 6】拷贝模型文件...
-if exist "%MODELS_SRC%" (
-    xcopy /E /I /Q /Y "%MODELS_SRC%" "models\insightface_models" >nul
-    if errorlevel 1 (
-        echo 【错误】模型文件拷贝失败
-        pause & exit /b 1
-    )
+echo 【步骤 6】预置 InsightFace 缓存模型...
+
+set "INSIGHTFACE_HOME=%USERPROFILE%\.insightface"
+set "INSIGHTFACE_CACHE=%INSIGHTFACE_HOME%\models\buffalo_l"
+set "BUFFALO_ZIP=%BUNDLE_DIR%\models\insightface_models\buffalo_l.zip"
+
+if not exist "%BUFFALO_ZIP%" (
+    echo 【警告】离线包未含 buffalo_l.zip，仍可能触发联网下载！
+    goto :step6_done
 )
+
+if exist "%INSIGHTFACE_CACHE%\buffalo_l.onnx" (
+    echo 【成功】缓存模型已存在，跳过解压。
+    goto :step6_done
+)
+
+:: 确保缓存根目录存在
+if not exist "%INSIGHTFACE_HOME%"     mkdir "%INSIGHTFACE_HOME%"
+if not exist "%INSIGHTFACE_HOME%\models" mkdir "%INSIGHTFACE_HOME%\models"
+
+:: 解压模型
+echo 【信息】正在解压 buffalo_l.zip 到 InsightFace 缓存...
+powershell -Command "Expand-Archive -Path '%BUFFALO_ZIP%' -DestinationPath '%INSIGHTFACE_CACHE%' -Force"
+if errorlevel 1 (
+    echo 【错误】解压失败，请检查 buffalo_l.zip 是否完整
+    pause & exit /b 1
+)
+echo 【成功】buffalo_l 模型已预置到 %INSIGHTFACE_CACHE%
 :step6_done
 set /a CURRENT_STEP+=1
 
