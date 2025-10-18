@@ -317,9 +317,9 @@ echo 尽情享受 FaceImgMat 吧！
 pause
 exit /b
 
-:: ========================================================================
-:: 通用子程序（echo done 已英文，避免 UTF-8 管道乱码）
-:: ========================================================================
+:: ======================================================================
+::  通用子程序
+:: ======================================================================
 :clean_with_spinner
 set "TARGET=%~1"
 if not exist "%TARGET%" exit /b
@@ -328,20 +328,49 @@ rmdir /s /q "%TARGET%"
 echo done
 exit /b
 
+:: ******** 解压修复：tar 优先，哈希校验，仅损坏才重下 ********
 :unzip_with_retry
 set "ARCHIVE=%~1"
 set "DEST=%~2"
+
+::--- 先算一次本地哈希
+if not exist "%ARCHIVE%" (
+    echo 【解压】 文件不存在: %ARCHIVE%
+    exit /b 1
+)
+for /f "skip=1" %%H in ('certutil -hashfile "%ARCHIVE%" SHA256') do set "LOCAL_SHA=%%H" & goto :hash_done
+:hash_done
+
 :retry_unzip
 echo | set /p="【解压】 %ARCHIVE% ..."
-powershell -Command "try { Expand-Archive -Path '%ARCHIVE%' -DestinationPath '%DEST%' -Force -ErrorAction Stop } catch { exit 1 }"
-if errorlevel 1 (
-    echo 失败，ZIP 可能损坏，正在重新下载...
-    del /f "%ARCHIVE%" 2>nul
-    call :download_with_spinner "%BUNDLE_URL%" "%ARCHIVE%"
-    goto retry_unzip
+
+:: ① 优先 tar（Win10+ 自带，长路径/UTF-8 无压力）
+tar -xf "%ARCHIVE%" -C "%DEST%" >nul 2>&1
+if !errorlevel! equ 0 (
+    echo done
+    exit /b
 )
-echo done
-exit /b
+
+:: ② fallback 到 PS Expand-Archive -Force
+powershell -NoP -C "Expand-Archive -LiteralPath '%ARCHIVE%' -DestinationPath '%DEST%' -Force"
+if !errorlevel! equ 0 (
+    echo done
+    exit /b
+)
+
+:: ③ 仍失败 → 哈希没变说明“工具解不开”而非“文件坏”
+for /f "skip=1" %%H in ('certutil -hashfile "%ARCHIVE%" SHA256') do set "RETRY_SHA=%%H"
+if /i "%LOCAL_SHA%"=="%RETRY_SHA%" (
+    echo 失败，但文件哈希未变，疑似压缩格式兼容问题。
+    echo        请手动解压后重新运行脚本，或更换压缩工具。
+    exit /b 1
+)
+
+:: ④ 哈希变了才重下
+echo 失败，ZIP 已损坏，正在重新下载...
+del /f "%ARCHIVE%" 2>nul
+call :download_with_spinner "%BUNDLE_URL%" "%ARCHIVE%"
+set "LOCAL_SHA=" & goto :hash_done
 
 :create_venv_with_spinner
 set "PY=%~1"
