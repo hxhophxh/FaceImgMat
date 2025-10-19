@@ -175,8 +175,14 @@ if defined PYTHON_CMD (
     )
     if exist "D:\" (set "TARGET_PY_DIR=D:\Python312") else set "TARGET_PY_DIR=%SystemDrive%\Python312"
     call :install_python_with_spinner "%PY_INSTALLER%" "%TARGET_PY_DIR%"
-    set "PYTHON_CMD=%TARGET_PY_DIR%\python.exe"
+    :: 重新获取刚装好的路径
+    for /f "delims=" %%i in ('where python 2^>nul') do set "PYTHON_CMD=%%~fi"
     echo 【成功】Python 安装完成: !PYTHON_CMD!
+)
+:: 二次校验
+if not exist "!PYTHON_CMD!" (
+    echo 【错误】Python 安装后仍未找到有效解释器，脚本终止。
+    pause & exit /b 1
 )
 :step2_done
 set /a CURRENT_STEP+=1
@@ -317,9 +323,9 @@ echo 尽情享受 FaceImgMat 吧！
 pause
 exit /b
 
-:: ======================================================================
+:: ========================================================================
 ::  通用子程序
-:: ======================================================================
+:: ========================================================================
 :clean_with_spinner
 set "TARGET=%~1"
 if not exist "%TARGET%" exit /b
@@ -389,7 +395,7 @@ exit /b
 set "INSTALLER=%~1"
 set "TARGET_DIR=%~2"
 echo | set /p="【Python】 安装中 ..."
-"%INSTALLER%" /quiet InstallAllUsers=0 TargetDir="%TARGET_DIR%" AssociateFiles=0 PrependPath=1
+"%INSTALLER%" /quiet InstallAllUsers=0 TargetDir="%~2" AssociateFiles=0 PrependPath=1
 echo done
 exit /b
 
