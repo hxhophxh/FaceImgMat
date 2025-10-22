@@ -1,0 +1,431 @@
+@echo off
+:: 强制 UTF-8，解决中文乱码
+chcp 65001 >nul
+setlocal EnableExtensions EnableDelayedExpansion
+title FaceImgMat 离线一键部署+自动启动（极简离线版）
+
+echo.
+echo ================================================================
+echo   FaceImgMat - 离线一键部署并自动启动服务（极简离线版）
+echo ================================================================
+echo.
+
+:: === 任务选择（纯英文符号，无中文引号、无全角空格） ===
+echo 【请选择开始步骤】：
+echo   0   准备离线包（含下载）
+echo   1   检测并安装 VC++ 2015-2022 x64 运行库(onnxruntime 依赖)
+echo   2   检查/安装 Python
+echo   3   准备项目目录
+echo   4   创建虚拟环境
+echo   5   安装依赖
+echo   6   预置 InsightFace 缓存模型（断网关键）
+echo   7   部署完成
+echo   8   启动服务并打开浏览器
+echo.
+
+:choose_start
+set "START_STEP="
+if "%~1"=="" (
+    set /p "START_STEP=请选择开始步骤（按回车从第 0 步开始）: "
+    if "!START_STEP!"=="" set "START_STEP=0"
+) else (
+    set "START_STEP=%~1"
+)
+set /a START_STEP=START_STEP 2>nul
+if !START_STEP! lss 0 set "START_STEP=0"
+if !START_STEP! gtr 8 set "START_STEP=8"
+set /a CURRENT_STEP=0
+echo 【信息】将从第 !START_STEP! 步开始执行
+echo.
+
+:: === 基础路径 ===
+set "SCRIPT_DIR=%~dp0"
+set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
+set "BUNDLE_NAME=offline_bundle"
+set "BUNDLE_ARCHIVE=%BUNDLE_NAME%.zip"
+set "BUNDLE_PATH=%SCRIPT_DIR%\%BUNDLE_ARCHIVE%"
+set "BUNDLE_DIR=%SCRIPT_DIR%\%BUNDLE_NAME%"
+set "BUNDLE_URL=https://github.com/hxhophxh/FaceImgMat/releases/latest/download/offline_bundle.zip"
+
+set "PYTHON_VERSION_TARGET=3.12"
+set "PYTHON_INSTALLER_NAME=python-3.12.7-amd64.exe"
+set "SERVICE_PORT=5000"
+set "SERVICE_URL=http://127.0.0.1:%SERVICE_PORT%"
+
+:: ##############################################################################
+:: 步骤 0  准备离线包（优先本地，失败再下载）
+:: ##############################################################################
+if !CURRENT_STEP! lss !START_STEP! goto :step0_done
+echo 【步骤 0】准备离线包...
+
+:: ① 若已存在 zip 先尝试解压，成功则跳过下载
+if exist "%BUNDLE_PATH%" (
+    echo 【信息】发现本地离线包，正在校验...
+    call :unzip_with_retry "%BUNDLE_PATH%" "%SCRIPT_DIR%"
+    if not errorlevel 1 (
+        echo 【成功】本地离线包解压完成，跳过下载。
+        goto :skip_download
+    )
+    echo 【警告】本地包损坏，将重新下载...
+    del /f "%BUNDLE_PATH%" 2>nul
+)
+
+:: ② 本地没有或解压失败才下载
+echo 【信息】本地未发现可用离线包，准备下载...
+call :download_with_spinner "%BUNDLE_URL%" "%BUNDLE_PATH%"
+call :unzip_with_retry "%BUNDLE_PATH%" "%SCRIPT_DIR%"
+
+:skip_download
+if exist "%SCRIPT_DIR%\%BUNDLE_NAME%\%BUNDLE_NAME%" (
+    robocopy "%SCRIPT_DIR%\%BUNDLE_NAME%\%BUNDLE_NAME%" "%SCRIPT_DIR%\%BUNDLE_NAME%" /E /MOVE /NP /NFL /NDL /NJH /NJS >nul
+    rmdir "%SCRIPT_DIR%\%BUNDLE_NAME%\%BUNDLE_NAME%" 2>nul
+)
+echo 【成功】离线包已准备: %BUNDLE_DIR%
+echo.
+:step0_done
+set /a CURRENT_STEP+=1
+
+:: ##############################################################################
+:: 步骤 1  检测并安装 VC++ 2015-2022 x64 运行库（onnxruntime 依赖）
+:: ##############################################################################
+if !CURRENT_STEP! lss !START_STEP! goto :step1_done
+echo 【步骤 1】检测 VC++ 2015-2022 x64 运行库...
+
+:: 注册表判存在
+set "VC_REG=HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+reg query "%VC_REG%" /v "Installed" 2>nul | find "0x1" >nul
+if not errorlevel 1 (
+    echo 【成功】已检测到 VC++ 2015-2022 x64 运行库，跳过安装。
+    goto :step1_done
+)
+
+:: 未安装 -> 先尝试离线包自带，没有再下载
+set "VC_INSTALLER=%BUNDLE_DIR%\vc_redist\vc_redist.x64.exe"
+set "VC_URL=https://aka.ms/vs/17/release/vc_redist.x64.exe"
+
+if exist "%VC_INSTALLER%" (
+    echo 【信息】未检测到运行库，使用离线包自带安装程序...
+) else (
+    echo 【信息】离线包未含 vc_redist.x64.exe，准备联网下载...
+    set "VC_INSTALLER=%SCRIPT_DIR%\vc_redist.x64.exe"
+    call :download_with_spinner "%VC_URL%" "%VC_INSTALLER%"
+    if not exist "%VC_INSTALLER%" (
+        echo 【警告】下载失败，请手动安装：%VC_URL%
+        pause
+        goto :step1_done
+    )
+)
+
+:: 静默安装
+echo 【信息】正在静默安装 VC++ 运行库...
+"%VC_INSTALLER%" /quiet /norestart
+if errorlevel 1 (
+    echo 【警告】安装失败，请手动安装：%VC_INSTALLER%
+    pause
+) else (
+    echo 【成功】VC++ 2015-2022 x64 运行库安装完成。
+)
+:step1_done
+set /a CURRENT_STEP+=1
+
+:: === 预定义路径 ===
+set "PROJECT_DIR=%BUNDLE_DIR%\FaceImgMat"
+set "SITE_PACKAGES_SRC=%BUNDLE_DIR%\site-packages"
+set "MODELS_SRC=%BUNDLE_DIR%\models\insightface_models"
+set "PY_INSTALLER=%BUNDLE_DIR%\python\%PYTHON_INSTALLER_NAME%"
+set "LOCK_FILE=%BUNDLE_DIR%\requirements.lock"
+if not exist "%PROJECT_DIR%" (
+    echo 【错误】离线包缺少 FaceImgMat 项目源码
+    pause & exit /b 1
+)
+
+:: ##############################################################################
+:: 步骤 2  检查 / 安装 Python
+:: ##############################################################################
+if !CURRENT_STEP! lss !START_STEP! goto :step2_done
+echo 【步骤 2】检查/安装 Python %PYTHON_VERSION_TARGET%...
+
+:: ① 先扫描几个常见目录
+set "PYTHON_CMD="
+for %%p in (
+    "D:\Python312\python.exe"
+    "C:\Program Files\Python312\python.exe"
+    "%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
+) do if exist "%%~p" set "PYTHON_CMD=%%~p"
+
+:: ② 若仍未找到，再看 PATH 中是否有 3.12
+if not defined PYTHON_CMD (
+    python --version >nul 2>&1 && (
+        for /f "tokens=2" %%v in ('python --version') do (
+            echo %%v | findstr /R "^3\.12\." >nul && (
+                for /f "delims=" %%i in ('where python 2^>nul') do (
+                    set "PYTHON_CMD=%%~fi"
+                    goto :python_found
+                )
+            )
+        )
+    )
+)
+:python_found
+
+if defined PYTHON_CMD (
+    echo 【成功】检测到 Python: !PYTHON_CMD!
+) else (
+    echo 【信息】未找到 Python 3.12，准备使用离线包中的安装程序...
+    if not exist "%PY_INSTALLER%" (
+        echo 【错误】离线包缺少 %PYTHON_INSTALLER_NAME% ，无法自动安装 Python
+        pause & exit /b 1
+    )
+
+    :: ③ 单分区兼容：直接装到系统盘
+    set "TARGET_PY_DIR=%SystemDrive%\Python312"
+
+    :: ④ 执行安装（系统级+写 PATH）
+    echo 【信息】安装 Python 到 %TARGET_PY_DIR%
+    call :install_python_with_spinner "%PY_INSTALLER%" "%TARGET_PY_DIR%"
+
+    :: ⑤ 立刻刷新当前进程的 PATH，并指定解释器路径
+    set "PATH=%TARGET_PY_DIR%;%TARGET_PY_DIR%\Scripts;%PATH%"
+    set "PYTHON_CMD=%TARGET_PY_DIR%\python.exe"
+)
+
+:: ⑥ 最终二次校验
+if not exist "!PYTHON_CMD!" (
+    echo 【错误】Python 安装后仍未找到有效解释器，脚本终止。
+    pause & exit /b 1)
+:step2_done
+set /a CURRENT_STEP+=1
+
+:: ##############################################################################
+:: 步骤 3  准备项目目录
+:: ##############################################################################
+if !CURRENT_STEP! lss !START_STEP! goto :step3_done
+echo 【步骤 3】准备项目目录...
+cd /d "%PROJECT_DIR%" || (
+    echo 【错误】无法进入项目目录: %PROJECT_DIR%
+    pause & exit /b 1
+)
+echo 【成功】当前目录: !CD!
+if exist ".venv" call :clean_with_spinner ".venv"
+if exist "%LOCK_FILE%" copy "%LOCK_FILE%" "%PROJECT_DIR%\requirements.lock" >nul
+:step3_done
+set /a CURRENT_STEP+=1
+
+:: ##############################################################################
+:: 步骤 4  创建虚拟环境
+:: ##############################################################################
+if !CURRENT_STEP! lss !START_STEP! goto :step4_done
+echo 【步骤 4】创建虚拟环境...
+if not exist "%PYTHON_CMD%" (
+    echo 【错误】Python 命令未找到: %PYTHON_CMD%
+    pause & exit /b 1
+)
+call :create_venv_with_spinner "%PYTHON_CMD%" "%PROJECT_DIR%"
+set "VENV_PY=%PROJECT_DIR%\.venv\Scripts\python.exe"
+set "VENV_SITE=%PROJECT_DIR%\.venv\Lib\site-packages"
+echo 【成功】虚拟环境已创建
+:step4_done
+set /a CURRENT_STEP+=1
+
+:: ##############################################################################
+:: 步骤 5  安装依赖
+:: ##############################################################################
+if !CURRENT_STEP! lss !START_STEP! goto :step5_done
+echo 【步骤 5】安装依赖...
+set "INSTALL_STATUS=0"
+set "WHEELS_DIR=%BUNDLE_DIR%\wheels"
+
+if exist "%WHEELS_DIR%" (
+    echo 【信息】检测到 wheels 目录，优先离线安装...
+    "%VENV_PY%" -m pip install --no-index --find-links "%WHEELS_DIR%" -r requirements.lock
+    if !errorlevel! equ 0 (
+        set "INSTALL_STATUS=1"
+        echo 【成功】pip 离线安装完成
+    ) else (
+        echo 【警告】pip 安装失败，将 fallback 到 site-packages 同步
+    )
+)
+
+if "!INSTALL_STATUS!"=="0" (
+    echo 【信息】使用 site-packages 同步方式...
+    call :sync_site_packages "%SITE_PACKAGES_SRC%" "%VENV_SITE%"
+    if errorlevel 1 (
+        pause & exit /b 1
+    )
+)
+
+if not exist "%VENV_SITE%\flask" (
+    echo 【错误】Flask 依赖未正确安装，请检查离线包是否完整
+    pause & exit /b 1
+)
+echo 【成功】依赖安装完成
+:step5_done
+set /a CURRENT_STEP+=1
+
+:: ##############################################################################
+:: 步骤 6  预置 InsightFace 缓存模型（断网关键）- 优化版
+:: ##############################################################################
+if !CURRENT_STEP! lss !START_STEP! goto :step6_done
+echo 【步骤 6】预置 InsightFace 缓存模型...
+
+set "INSIGHTFACE_HOME=%USERPROFILE%\.insightface"
+set "INSIGHTFACE_CACHE=%INSIGHTFACE_HOME%\models\buffalo_l"
+set "BUFFALO_ZIP=%BUNDLE_DIR%\models\insightface_models\buffalo_l.zip"
+
+if not exist "%BUFFALO_ZIP%" (
+    echo 【警告】离线包未含 buffalo_l.zip，仍可能触发联网下载！
+    goto :step6_done
+)
+
+if exist "%INSIGHTFACE_CACHE%\buffalo_l.onnx" (
+    echo 【成功】缓存模型已存在，跳过解压。
+    goto :step6_done
+)
+
+:: 确保缓存根目录存在
+if not exist "%INSIGHTFACE_HOME%"     mkdir "%INSIGHTFACE_HOME%"
+if not exist "%INSIGHTFACE_HOME%\models" mkdir "%INSIGHTFACE_HOME%\models"
+
+:: 解压模型（优先使用tar，速度快10倍以上）
+echo 【信息】正在解压 buffalo_l.zip 到 InsightFace 缓存...
+tar -xf "%BUFFALO_ZIP%" -C "%INSIGHTFACE_HOME%\models" 2>nul
+if errorlevel 1 (
+    echo 【信息】tar命令失败，使用PowerShell解压...
+    powershell -Command "Expand-Archive -Path '%BUFFALO_ZIP%' -DestinationPath '%INSIGHTFACE_CACHE%' -Force"
+    if errorlevel 1 (
+        echo 【错误】解压失败，请检查 buffalo_l.zip 是否完整
+        pause & exit /b 1
+    )
+)
+echo 【成功】buffalo_l 模型已预置到 %INSIGHTFACE_CACHE%
+:step6_done
+set /a CURRENT_STEP+=1
+
+:: ##############################################################################
+:: 步骤 7  部署完成
+:: ##############################################################################
+if !CURRENT_STEP! lss !START_STEP! goto :step7_done
+echo 【步骤 7】部署完成！
+
+:: 创建桌面快捷方式
+set "DESKTOP=%USERPROFILE%\Desktop"
+set "START_BAT=%BUNDLE_DIR%\FaceImgMat\start.bat"
+set "SHORTCUT=%DESKTOP%\FaceImgMat.lnk"
+powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%SHORTCUT%'); $Shortcut.TargetPath = '%START_BAT%'; $Shortcut.WorkingDirectory = '%BUNDLE_DIR%\FaceImgMat'; $Shortcut.Save()"
+echo 【提示】启动快捷方式已创建到桌面：%SHORTCUT%
+:step7_done
+set /a CURRENT_STEP+=1
+
+:: ##############################################################################
+:: 步骤 8  启动服务并打开浏览器
+:: ##############################################################################
+if !CURRENT_STEP! lss !START_STEP! goto :step8_done
+echo 【步骤 8】正在启动 FaceImgMat 服务并打开浏览器...
+if not exist "%START_BAT%" (
+    echo 【错误】未找到 %START_BAT%，无法启动服务！
+    pause & exit /b 1
+)
+start "" "%START_BAT%"
+timeout /t 6 /nobreak >nul
+start "" "%SERVICE_URL%"
+echo 【成功】服务已启动并打开浏览器！
+:step8_done
+
+echo.
+echo 尽情享受 FaceImgMat 吧！
+pause
+exit /b
+
+:: ========================================================================
+::  通用子程序
+:: ========================================================================
+:clean_with_spinner
+set "TARGET=%~1"
+if not exist "%TARGET%" exit /b
+echo | set /p="【清理】 %TARGET% ..."
+rmdir /s /q "%TARGET%"
+echo done
+exit /b
+
+:: ------------------------------------------------------------------------
+::  带统一动态进度条的解压
+:: ------------------------------------------------------------------------
+:unzip_with_retry
+set "ARCHIVE=%~1"
+set "DEST=%~2"
+
+if not exist "%ARCHIVE%" (
+    echo 【解压】 文件不存在: %ARCHIVE%
+    exit /b 1
+)
+
+echo 【解压】 %ARCHIVE% ...
+
+:: 统一进度条：先启动解压（tar 或 PowerShell），然后一起动画
+set "DONE=0"
+:: ① 尝试 tar（Win10+ 能直接解 .zip）
+start /b cmd /c "tar -xf "%ARCHIVE%" -C "%DEST%" 2>nul && exit 0 || exit 1" >nul 2>&1
+if !errorlevel! equ 0 (
+    :: tar 可用，给 10 秒动画，提前结束则跳出
+    for /l %%i in (1,1,10) do (
+        >nul timeout /t 1 /nobreak
+        tasklist /fi "WindowTitle eq tar" 2>nul | find "tar" >nul || goto :extract_done
+    )
+    goto :extract_done
+)
+
+:: ② tar 失败则转 PowerShell，前台等待
+start "" /wait powershell -NoP -C "Expand-Archive -LiteralPath '%ARCHIVE%' -DestinationPath '%DEST%' -Force"
+
+:extract_done
+echo.
+echo done
+exit /b
+
+:create_venv_with_spinner
+set "PY=%~1"
+set "DIR=%~2"
+if not exist "%PY%" (
+    echo 【错误】Python 解释器未找到: %PY%
+    exit /b 1
+)
+echo | set /p="【venv】 创建虚拟环境 ..."
+cd /d "%DIR%"
+"%PY%" -m venv .venv
+echo done
+exit /b
+
+:install_python_with_spinner
+set "INSTALLER=%~1"
+set "TARGET_DIR=%~2"
+echo | set /p="【Python】 安装中 ..."
+"%INSTALLER%" /quiet InstallAllUsers=1 TargetDir="%~2" AssociateFiles=0 PrependPath=1 /norestart
+echo done
+exit /b
+
+:download_with_spinner
+set "URL=%~1"
+set "OUTPUT=%~2"
+echo | set /p="【下载】 %URL% ..."
+powershell -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -Uri '%URL%' -OutFile '%OUTPUT%'"
+echo done
+exit /b
+
+:sync_site_packages
+set "SRC=%~1"
+set "DST=%~2"
+if not exist "%SRC%" (
+    echo 【错误】离线包缺少 site-packages 目录: "%SRC%"
+    exit /b 1
+)
+if not exist "%DST%" (
+    mkdir "%DST%" 2>nul
+)
+echo 【信息】 正在同步 site-packages 到虚拟环境...
+robocopy "%SRC%" "%DST%" /MIR /XD __pycache__ /XF *.pyc /NP /NFL /NDL /NJH /NJS /R:3 /W:2 >nul
+if %errorlevel% GEQ 8 (
+    echo 【错误】 robocopy 同步失败，退出码: %errorlevel%
+    exit /b 1
+)
+echo done
+exit /b
