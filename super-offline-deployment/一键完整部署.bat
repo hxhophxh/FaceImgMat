@@ -74,11 +74,27 @@ if exist "%BUNDLE_PATH%" (
 echo 【信息】本地未发现可用离线包，准备下载...
 call :download_with_spinner "%BUNDLE_URL%" "%BUNDLE_PATH%"
 call :unzip_with_retry "%BUNDLE_PATH%" "%SCRIPT_DIR%"
+if errorlevel 1 (
+    echo 【错误】离线包解压失败
+    pause & exit /b 1
+)
 
 :skip_download
+:: 处理双层嵌套目录
 if exist "%SCRIPT_DIR%\%BUNDLE_NAME%\%BUNDLE_NAME%" (
+    echo 【信息】检测到嵌套目录，正在展平...
     robocopy "%SCRIPT_DIR%\%BUNDLE_NAME%\%BUNDLE_NAME%" "%SCRIPT_DIR%\%BUNDLE_NAME%" /E /MOVE /NP /NFL /NDL /NJH /NJS >nul
     rmdir "%SCRIPT_DIR%\%BUNDLE_NAME%\%BUNDLE_NAME%" 2>nul
+)
+
+:: 等待文件系统同步
+timeout /t 2 /nobreak >nul
+
+:: 验证关键文件
+echo 【信息】验证离线包完整性...
+if not exist "%BUNDLE_DIR%" (
+    echo 【错误】离线包目录不存在: %BUNDLE_DIR%
+    pause & exit /b 1
 )
 echo 【成功】离线包已准备: %BUNDLE_DIR%
 echo.
@@ -99,17 +115,22 @@ if not errorlevel 1 (
     goto :step1_done
 )
 
-:: 未安装 -> 先尝试离线包自带，没有再下载
-set "VC_INSTALLER=%BUNDLE_DIR%\vc_redist\vc_redist.x64.exe"
+:: 未安装 -> 多路径查找离线包中的vc_redist
+set "VC_INSTALLER="
+for %%p in (
+    "%BUNDLE_DIR%\vc_redist\vc_redist.x64.exe"
+    "%BUNDLE_DIR%\vc_redist.x64.exe"
+    "%SCRIPT_DIR%\offline_bundle\vc_redist\vc_redist.x64.exe"
+) do if exist "%%~p" set "VC_INSTALLER=%%~p"
 set "VC_URL=https://aka.ms/vs/17/release/vc_redist.x64.exe"
 
-if exist "%VC_INSTALLER%" (
-    echo 【信息】未检测到运行库，使用离线包自带安装程序...
+if defined VC_INSTALLER (
+    echo 【信息】找到离线包中的VC++安装程序: !VC_INSTALLER!
 ) else (
     echo 【信息】离线包未含 vc_redist.x64.exe，准备联网下载...
     set "VC_INSTALLER=%SCRIPT_DIR%\vc_redist.x64.exe"
-    call :download_with_spinner "%VC_URL%" "%VC_INSTALLER%"
-    if not exist "%VC_INSTALLER%" (
+    call :download_with_spinner "%VC_URL%" "!VC_INSTALLER!"
+    if not exist "!VC_INSTALLER!" (
         echo 【警告】下载失败，请手动安装：%VC_URL%
         pause
         goto :step1_done
@@ -118,9 +139,9 @@ if exist "%VC_INSTALLER%" (
 
 :: 静默安装
 echo 【信息】正在静默安装 VC++ 运行库...
-"%VC_INSTALLER%" /quiet /norestart
+"!VC_INSTALLER!" /quiet /norestart
 if errorlevel 1 (
-    echo 【警告】安装失败，请手动安装：%VC_INSTALLER%
+    echo 【警告】安装失败，请手动安装：!VC_INSTALLER!
     pause
 ) else (
     echo 【成功】VC++ 2015-2022 x64 运行库安装完成。
@@ -144,6 +165,8 @@ if not exist "%PROJECT_DIR%" (
 :: ##############################################################################
 if !CURRENT_STEP! lss !START_STEP! goto :step2_done
 echo 【步骤 2】检查/安装 Python %PYTHON_VERSION_TARGET%...
+
+:: ① 先扫描几个常见目录
 set "PYTHON_CMD="
 for %%p in (
     "D:\Python312\python.exe"
@@ -151,11 +174,11 @@ for %%p in (
     "%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
 ) do if exist "%%~p" set "PYTHON_CMD=%%~p"
 
+:: ② 若仍未找到，再看 PATH 中是否有 3.12
 if not defined PYTHON_CMD (
     python --version >nul 2>&1 && (
         for /f "tokens=2" %%v in ('python --version') do (
             echo %%v | findstr /R "^3\.12\." >nul && (
-                :: 关键修复：把裸命令解析成绝对路径
                 for /f "delims=" %%i in ('where python 2^>nul') do (
                     set "PYTHON_CMD=%%~fi"
                     goto :python_found
@@ -165,6 +188,7 @@ if not defined PYTHON_CMD (
     )
 )
 :python_found
+
 if defined PYTHON_CMD (
     echo 【成功】检测到 Python: !PYTHON_CMD!
 ) else (
@@ -173,17 +197,32 @@ if defined PYTHON_CMD (
         echo 【错误】离线包缺少 %PYTHON_INSTALLER_NAME% ，无法自动安装 Python
         pause & exit /b 1
     )
-    if exist "D:\" (set "TARGET_PY_DIR=D:\Python312") else set "TARGET_PY_DIR=%SystemDrive%\Python312"
-    call :install_python_with_spinner "%PY_INSTALLER%" "%TARGET_PY_DIR%"
-    :: 重新获取刚装好的路径
-    for /f "delims=" %%i in ('where python 2^>nul') do set "PYTHON_CMD=%%~fi"
-    echo 【成功】Python 安装完成: !PYTHON_CMD!
+
+    :: ③ 单分区兼容：直接装到系统盘
+    set "TARGET_PY_DIR=%SystemDrive%\Python312"
+
+    :: ④ 执行安装（系统级+写 PATH）
+    echo 【信息】安装 Python 到 !TARGET_PY_DIR!
+    call :install_python_with_spinner "%PY_INSTALLER%" "!TARGET_PY_DIR!"
+
+    :: ⑤ 等待安装完成并验证
+    echo 【信息】等待Python安装完成...
+    for /l %%i in (1,1,30) do (
+        if exist "!TARGET_PY_DIR!\python.exe" goto :python_installed
+        timeout /t 1 /nobreak >nul
+    )
+    :python_installed
+    
+    :: ⑥ 刷新PATH并设置解释器路径
+    set "PATH=!TARGET_PY_DIR!;!TARGET_PY_DIR!\Scripts;%PATH%"
+    set "PYTHON_CMD=!TARGET_PY_DIR!\python.exe"
 )
-:: 二次校验
+
+:: ⑦ 最终校验
 if not exist "!PYTHON_CMD!" (
-    echo 【错误】Python 安装后仍未找到有效解释器，脚本终止。
-    pause & exit /b 1
-)
+    echo 【错误】Python 安装后仍未找到有效解释器: !PYTHON_CMD!
+    echo 【提示】请手动安装Python 3.12并重新运行脚本
+    pause & exit /b 1)
 :step2_done
 set /a CURRENT_STEP+=1
 
@@ -254,7 +293,7 @@ echo 【成功】依赖安装完成
 set /a CURRENT_STEP+=1
 
 :: ##############################################################################
-:: 步骤 6  预置 InsightFace 缓存模型（断网关键）
+:: 步骤 6  预置 InsightFace 缓存模型（断网关键）- 优化版
 :: ##############################################################################
 if !CURRENT_STEP! lss !START_STEP! goto :step6_done
 echo 【步骤 6】预置 InsightFace 缓存模型...
@@ -277,12 +316,16 @@ if exist "%INSIGHTFACE_CACHE%\buffalo_l.onnx" (
 if not exist "%INSIGHTFACE_HOME%"     mkdir "%INSIGHTFACE_HOME%"
 if not exist "%INSIGHTFACE_HOME%\models" mkdir "%INSIGHTFACE_HOME%\models"
 
-:: 解压模型
+:: 解压模型（优先使用tar，速度快10倍以上）
 echo 【信息】正在解压 buffalo_l.zip 到 InsightFace 缓存...
-powershell -Command "Expand-Archive -Path '%BUFFALO_ZIP%' -DestinationPath '%INSIGHTFACE_CACHE%' -Force"
+tar -xf "%BUFFALO_ZIP%" -C "%INSIGHTFACE_HOME%\models" 2>nul
 if errorlevel 1 (
-    echo 【错误】解压失败，请检查 buffalo_l.zip 是否完整
-    pause & exit /b 1
+    echo 【信息】tar命令失败，使用PowerShell解压...
+    powershell -Command "Expand-Archive -Path '%BUFFALO_ZIP%' -DestinationPath '%INSIGHTFACE_CACHE%' -Force"
+    if errorlevel 1 (
+        echo 【错误】解压失败，请检查 buffalo_l.zip 是否完整
+        pause & exit /b 1
+    )
 )
 echo 【成功】buffalo_l 模型已预置到 %INSIGHTFACE_CACHE%
 :step6_done
@@ -346,27 +389,35 @@ if not exist "%ARCHIVE%" (
     exit /b 1
 )
 
-echo 【解压】 %ARCHIVE% ...
+echo | set /p="【解压】 %ARCHIVE% "
 
-:: 统一进度条：先启动解压（tar 或 PowerShell），然后一起动画
-set "DONE=0"
-:: ① 尝试 tar（Win10+ 能直接解 .zip）
-start /b cmd /c "tar -xf "%ARCHIVE%" -C "%DEST%" 2>nul && exit 0 || exit 1" >nul 2>&1
+:: 后台启动tar，前台显示动态点点
+start /b cmd /c "tar -xf "%ARCHIVE%" -C "%DEST%" 2>nul && exit 0 || exit 1"
 if !errorlevel! equ 0 (
-    :: tar 可用，给 10 秒动画，提前结束则跳出
-    for /l %%i in (1,1,10) do (
-        >nul timeout /t 1 /nobreak
-        tasklist /fi "WindowTitle eq tar" 2>nul | find "tar" >nul || goto :extract_done
+    :: 动态显示点点，每秒检查进程
+    for /l %%i in (1,1,60) do (
+        echo | set /p="."
+        timeout /t 1 /nobreak >nul 2>&1
+        tasklist 2>nul | find /i "tar.exe" >nul || goto :tar_done
     )
-    goto :extract_done
+    :tar_done
+    echo  done
+    exit /b 0
 )
 
-:: ② tar 失败则转 PowerShell，前台等待
-start "" /wait powershell -NoP -C "Expand-Archive -LiteralPath '%ARCHIVE%' -DestinationPath '%DEST%' -Force"
-
-:extract_done
+:: tar失败用PowerShell
 echo.
-echo done
+echo 【信息】tar不可用，使用PowerShell解压...
+echo | set /p="【解压】 "
+start /b powershell -NoP -C "Expand-Archive -LiteralPath '%ARCHIVE%' -DestinationPath '%DEST%' -Force"
+:: 动态显示点点
+for /l %%i in (1,1,120) do (
+    echo | set /p="."
+    timeout /t 1 /nobreak >nul 2>&1
+    tasklist 2>nul | find /i "powershell.exe" >nul || goto :ps_done
+)
+:ps_done
+echo  done
 exit /b
 
 :create_venv_with_spinner
@@ -386,7 +437,7 @@ exit /b
 set "INSTALLER=%~1"
 set "TARGET_DIR=%~2"
 echo | set /p="【Python】 安装中 ..."
-"%INSTALLER%" /quiet InstallAllUsers=0 TargetDir="%~2" AssociateFiles=0 PrependPath=1
+start "" /wait "%INSTALLER%" /quiet InstallAllUsers=1 TargetDir="%~2" AssociateFiles=0 PrependPath=1 /norestart
 echo done
 exit /b
 
