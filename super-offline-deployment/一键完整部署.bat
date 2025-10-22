@@ -222,7 +222,8 @@ if defined PYTHON_CMD (
 if not exist "!PYTHON_CMD!" (
     echo 【错误】Python 安装后仍未找到有效解释器: !PYTHON_CMD!
     echo 【提示】请手动安装Python 3.12并重新运行脚本
-    pause & exit /b 1
+    pause
+    exit /b 1
 )
 :step2_done
 set /a CURRENT_STEP+=1
@@ -403,7 +404,7 @@ if !errorlevel! equ 0 (
 echo.
 echo 【信息】tar不可用，使用PowerShell解压...
 echo | set /p="【解压】 "
-powershell -NoP -C "Expand-Archive -LiteralPath '%ARCHIVE%' -DestinationPath '%DEST%' -Force"
+powershell -NoP -C "Expand-Archive -LiteralPath '%ARCHIVE%' -DestinationPath '%DEST%' -Force" 2>nul
 echo  done
 exit /b
 
