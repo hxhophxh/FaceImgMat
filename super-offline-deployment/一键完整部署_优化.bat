@@ -99,17 +99,22 @@ if not errorlevel 1 (
     goto :step1_done
 )
 
-:: 未安装 -> 先尝试离线包自带，没有再下载
-set "VC_INSTALLER=%BUNDLE_DIR%\vc_redist\vc_redist.x64.exe"
+:: 未安装 -> 多路径查找离线包中的vc_redist
+set "VC_INSTALLER="
+for %%p in (
+    "%BUNDLE_DIR%\vc_redist\vc_redist.x64.exe"
+    "%BUNDLE_DIR%\vc_redist.x64.exe"
+    "%SCRIPT_DIR%\offline_bundle\vc_redist\vc_redist.x64.exe"
+) do if exist "%%~p" set "VC_INSTALLER=%%~p"
 set "VC_URL=https://aka.ms/vs/17/release/vc_redist.x64.exe"
 
-if exist "%VC_INSTALLER%" (
-    echo 【信息】未检测到运行库，使用离线包自带安装程序...
+if defined VC_INSTALLER (
+    echo 【信息】找到离线包中的VC++安装程序: !VC_INSTALLER!
 ) else (
     echo 【信息】离线包未含 vc_redist.x64.exe，准备联网下载...
     set "VC_INSTALLER=%SCRIPT_DIR%\vc_redist.x64.exe"
-    call :download_with_spinner "%VC_URL%" "%VC_INSTALLER%"
-    if not exist "%VC_INSTALLER%" (
+    call :download_with_spinner "%VC_URL%" "!VC_INSTALLER!"
+    if not exist "!VC_INSTALLER!" (
         echo 【警告】下载失败，请手动安装：%VC_URL%
         pause
         goto :step1_done
@@ -118,9 +123,9 @@ if exist "%VC_INSTALLER%" (
 
 :: 静默安装
 echo 【信息】正在静默安装 VC++ 运行库...
-"%VC_INSTALLER%" /quiet /norestart
+"!VC_INSTALLER!" /quiet /norestart
 if errorlevel 1 (
-    echo 【警告】安装失败，请手动安装：%VC_INSTALLER%
+    echo 【警告】安装失败，请手动安装：!VC_INSTALLER!
     pause
 ) else (
     echo 【成功】VC++ 2015-2022 x64 运行库安装完成。
