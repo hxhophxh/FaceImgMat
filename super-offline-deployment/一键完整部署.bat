@@ -222,7 +222,8 @@ if defined PYTHON_CMD (
 if not exist "!PYTHON_CMD!" (
     echo 【错误】Python 安装后仍未找到有效解释器: !PYTHON_CMD!
     echo 【提示】请手动安装Python 3.12并重新运行脚本
-    pause & exit /b 1)
+    pause & exit /b 1
+)
 :step2_done
 set /a CURRENT_STEP+=1
 
@@ -391,32 +392,18 @@ if not exist "%ARCHIVE%" (
 
 echo | set /p="【解压】 %ARCHIVE% "
 
-:: 后台启动tar，前台显示动态点点
-start /b cmd /c "tar -xf "%ARCHIVE%" -C "%DEST%" 2>nul && exit 0 || exit 1"
+:: 尝试tar解压（同步方式）
+tar -xf "%ARCHIVE%" -C "%DEST%" 2>nul
 if !errorlevel! equ 0 (
-    :: 动态显示点点，每秒检查进程
-    for /l %%i in (1,1,60) do (
-        echo | set /p="."
-        timeout /t 1 /nobreak >nul 2>&1
-        tasklist 2>nul | find /i "tar.exe" >nul || goto :tar_done
-    )
-    :tar_done
     echo  done
     exit /b 0
 )
 
-:: tar失败用PowerShell
+:: tar失败用PowerShell（同步方式）
 echo.
 echo 【信息】tar不可用，使用PowerShell解压...
 echo | set /p="【解压】 "
-start /b powershell -NoP -C "Expand-Archive -LiteralPath '%ARCHIVE%' -DestinationPath '%DEST%' -Force"
-:: 动态显示点点
-for /l %%i in (1,1,120) do (
-    echo | set /p="."
-    timeout /t 1 /nobreak >nul 2>&1
-    tasklist 2>nul | find /i "powershell.exe" >nul || goto :ps_done
-)
-:ps_done
+powershell -NoP -C "Expand-Archive -LiteralPath '%ARCHIVE%' -DestinationPath '%DEST%' -Force"
 echo  done
 exit /b
 
