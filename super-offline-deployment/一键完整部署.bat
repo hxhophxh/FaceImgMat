@@ -4,14 +4,31 @@ chcp 65001 >nul
 setlocal EnableExtensions EnableDelayedExpansion
 title FaceImgMat 离线一键部署+自动启动（极简离线版）
 
+:: 全局错误处理：捕获所有错误并显示
+if not defined ERROR_HANDLER (
+    set "ERROR_HANDLER=1"
+    cmd /c "%~f0" %* 2>&1
+    set "EXIT_CODE=!ERRORLEVEL!"
+    if !EXIT_CODE! neq 0 (
+        echo.
+        echo ================================================================
+        echo   【错误】脚本执行出错，退出码: !EXIT_CODE!
+        echo ================================================================
+        echo.
+    )
+    pause
+    exit /b !EXIT_CODE!
+)
+
 echo.
+
 echo ================================================================
 echo   FaceImgMat - 离线一键部署并自动启动服务（极简离线版）
 echo ================================================================
 echo.
 
 :: === 任务选择（纯英文符号，无中文引号、无全角空格） ===
-echo 【请选择开始步骤】：
+echo 【请选择开始步骤】（将从选择的步骤执行到步骤8）：
 echo   0   准备离线包（含下载）
 echo   1   检测并安装 VC++ 2015-2022 x64 运行库(onnxruntime 依赖)
 echo   2   检查/安装 Python
@@ -31,11 +48,28 @@ if "%~1"=="" (
 ) else (
     set "START_STEP=%~1"
 )
-set /a START_STEP=START_STEP 2>nul
-if !START_STEP! lss 0 set "START_STEP=0"
-if !START_STEP! gtr 8 set "START_STEP=8"
+
+:: 验证输入是否为数字
+set "TEST_NUM=!START_STEP!"
+for /f "delims=0123456789" %%i in ("!TEST_NUM!") do (
+    echo 【错误】输入无效，请输入 0-8 之间的数字
+    goto :choose_start
+)
+
+:: 转换为数字并验证范围
+set /a START_STEP=!START_STEP! 2>nul
+if !START_STEP! lss 0 (
+    echo 【错误】步骤不能小于 0
+    goto :choose_start
+)
+if !START_STEP! gtr 8 (
+    echo 【错误】步骤不能大于 8
+    goto :choose_start
+)
+
 set /a CURRENT_STEP=0
-echo 【信息】将从第 !START_STEP! 步开始执行
+echo.
+echo 【信息】将从第 !START_STEP! 步开始执行，直到步骤 8
 echo.
 
 :: === 基础路径 ===
@@ -99,7 +133,26 @@ if not exist "%BUNDLE_DIR%" (
 echo 【成功】离线包已准备: %BUNDLE_DIR%
 echo.
 :step0_done
-set /a CURRENT_STEP+=1
+if !CURRENT_STEP! equ 0 set /a CURRENT_STEP+=1
+
+:: === 预定义路径（在步骤1之前检查并设置）===
+if !START_STEP! geq 1 (
+    if not exist "%BUNDLE_DIR%" (
+        echo.
+        echo 【错误】未找到离线包目录: %BUNDLE_DIR%
+        echo 【提示】请先执行步骤0准备离线包，或确保 offline_bundle 文件夹存在
+        echo.
+        pause
+        exit /b 1
+    )
+    
+    :: 设置项目路径变量（当跳过步骤0时必须设置）
+    set "PROJECT_DIR=%BUNDLE_DIR%\FaceImgMat"
+    set "SITE_PACKAGES_SRC=%BUNDLE_DIR%\site-packages"
+    set "MODELS_SRC=%BUNDLE_DIR%\models\insightface_models"
+    set "PY_INSTALLER=%BUNDLE_DIR%\python\%PYTHON_INSTALLER_NAME%"
+    set "LOCK_FILE=%BUNDLE_DIR%\requirements.lock"
+)
 
 :: ##############################################################################
 :: 步骤 1  检测并安装 VC++ 2015-2022 x64 运行库（onnxruntime 依赖）
@@ -146,24 +199,85 @@ if errorlevel 1 (
 ) else (
     echo 【成功】VC++ 2015-2022 x64 运行库安装完成。
 )
+echo.
 :step1_done
-set /a CURRENT_STEP+=1
+if !CURRENT_STEP! equ 1 set /a CURRENT_STEP+=1
 
-:: === 预定义路径 ===
-set "PROJECT_DIR=%BUNDLE_DIR%\FaceImgMat"
-set "SITE_PACKAGES_SRC=%BUNDLE_DIR%\site-packages"
-set "MODELS_SRC=%BUNDLE_DIR%\models\insightface_models"
-set "PY_INSTALLER=%BUNDLE_DIR%\python\%PYTHON_INSTALLER_NAME%"
-set "LOCK_FILE=%BUNDLE_DIR%\requirements.lock"
-if not exist "%PROJECT_DIR%" (
-    echo 【错误】离线包缺少 FaceImgMat 项目源码
-    pause & exit /b 1
+:: === 设置项目路径变量（如果还未设置）===
+if not defined PROJECT_DIR (
+    set "PROJECT_DIR=%BUNDLE_DIR%\FaceImgMat"
+    set "SITE_PACKAGES_SRC=%BUNDLE_DIR%\site-packages"
+    set "MODELS_SRC=%BUNDLE_DIR%\models\insightface_models"
+    set "PY_INSTALLER=%BUNDLE_DIR%\python\%PYTHON_INSTALLER_NAME%"
+    set "LOCK_FILE=%BUNDLE_DIR%\requirements.lock"
 )
+
+:: === 检测Python和设置虚拟环境路径（当跳过步骤2-4时）===
+if !START_STEP! geq 3 goto :check_python_skip
+goto :skip_python_check
+:check_python_skip
+if defined PYTHON_CMD goto :python_already_set
+
+:: 扫描常见目录
+if exist "D:\Python312\python.exe" set "PYTHON_CMD=D:\Python312\python.exe"
+if exist "C:\Program Files\Python312\python.exe" set "PYTHON_CMD=C:\Program Files\Python312\python.exe"
+if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" set "PYTHON_CMD=%LOCALAPPDATA%\Programs\Python\Python312\python.exe"
+
+:: 检查PATH
+if not defined PYTHON_CMD (
+    where python >nul 2>&1
+    if not errorlevel 1 (
+        for /f "delims=" %%i in ('where python 2^>nul') do (
+            set "PYTHON_CMD=%%i"
+            goto :python_already_set
+        )
+    )
+)
+
+if not defined PYTHON_CMD (
+    echo 【错误】未检测到 Python 3.12，请先执行步骤2安装Python
+    pause
+    exit /b 1
+)
+
+:python_already_set
+:: 设置虚拟环境路径（当跳过步骤4时）
+if !START_STEP! geq 5 (
+    if not defined VENV_PY (
+        set "VENV_PY=%PROJECT_DIR%\.venv\Scripts\python.exe"
+        set "VENV_SITE=%PROJECT_DIR%\.venv\Lib\site-packages"
+        
+        if not exist "!VENV_PY!" (
+            echo 【错误】虚拟环境不存在，请先执行步骤4创建虚拟环境
+            echo 虚拟环境路径: !VENV_PY!
+            pause
+            exit /b 1
+        )
+        
+        :: 检查虚拟环境是否完整（检查pip模块）
+        "!VENV_PY!" -m pip --version >nul 2>&1
+        if errorlevel 1 (
+            echo 【警告】虚拟环境不完整（缺少pip模块），将重新创建
+            echo 【信息】正在删除旧的虚拟环境...
+            rmdir /s /q "%PROJECT_DIR%\.venv" 2>nul
+            echo 【信息】正在重新创建虚拟环境...
+            "!PYTHON_CMD!" -m venv "%PROJECT_DIR%\.venv"
+            if errorlevel 1 (
+                echo 【错误】虚拟环境创建失败
+                pause
+                exit /b 1
+            )
+            echo 【成功】虚拟环境已重新创建
+        )
+    )
+)
+:skip_python_check
 
 :: ##############################################################################
 :: 步骤 2  检查 / 安装 Python
 :: ##############################################################################
 if !CURRENT_STEP! lss !START_STEP! goto :step2_done
+echo.
 echo 【步骤 2】检查/安装 Python %PYTHON_VERSION_TARGET%...
 
 :: ① 先扫描几个常见目录
@@ -191,42 +305,47 @@ if not defined PYTHON_CMD (
 
 if defined PYTHON_CMD (
     echo 【成功】检测到 Python: !PYTHON_CMD!
-) else (
-    echo 【信息】未找到 Python 3.12，准备使用离线包中的安装程序...
-    if not exist "%PY_INSTALLER%" (
-        echo 【错误】离线包缺少 %PYTHON_INSTALLER_NAME% ，无法自动安装 Python
-        pause & exit /b 1
-    )
-
-    :: ③ 单分区兼容：直接装到系统盘
-    set "TARGET_PY_DIR=%SystemDrive%\Python312"
-
-    :: ④ 执行安装（系统级+写 PATH）
-    echo 【信息】安装 Python 到 !TARGET_PY_DIR!
-    call :install_python_with_spinner "%PY_INSTALLER%" "!TARGET_PY_DIR!"
-
-    :: ⑤ 等待安装完成并验证
-    echo 【信息】等待Python安装完成...
-    for /l %%i in (1,1,30) do (
-        if exist "!TARGET_PY_DIR!\python.exe" goto :python_installed
-        timeout /t 1 /nobreak >nul
-    )
-    :python_installed
-    
-    :: ⑥ 刷新PATH并设置解释器路径
-    set "PATH=!TARGET_PY_DIR!;!TARGET_PY_DIR!\Scripts;%PATH%"
-    set "PYTHON_CMD=!TARGET_PY_DIR!\python.exe"
+    goto :skip_python_install
 )
+echo 【信息】未找到 Python 3.12，准备使用离线包中的安装程序...
+if not exist "%PY_INSTALLER%" (
+    echo 【错误】离线包缺少 %PYTHON_INSTALLER_NAME% ，无法自动安装 Python
+    pause & exit /b 1
+)
+
+:: ③ 单分区兼容：直接装到系统盘
+set "TARGET_PY_DIR=%SystemDrive%\Python312"
+
+:: ④ 执行安装（系统级+写 PATH）
+echo 【信息】安装 Python 到 !TARGET_PY_DIR!
+call :install_python_with_spinner "%PY_INSTALLER%" "!TARGET_PY_DIR!"
+
+:: ⑤ 等待安装完成并验证（修复版）
+echo 【信息】等待Python安装完成...
+for /l %%i in (1,1,60) do (
+    if exist "!TARGET_PY_DIR!\python.exe" goto :python_installed
+    timeout /t 1 /nobreak >nul
+)
+echo 【警告】超时，仍未检测到 !TARGET_PY_DIR!\python.exe
+exit /b 1
+:python_installed
+
+:: ⑥ 刷新PATH并设置解释器路径
+set "PATH=!TARGET_PY_DIR!;!TARGET_PY_DIR!\Scripts;%PATH%"
+set "PYTHON_CMD=!TARGET_PY_DIR!\python.exe"
+
+:skip_python_install
+
 
 :: ⑦ 最终校验
 if not exist "!PYTHON_CMD!" (
-    echo 【错误】Python 安装后仍未找到有效解释器: !PYTHON_CMD!
-    echo 【提示】请手动安装Python 3.12并重新运行脚本
+    echo 【警告】Python 安装后仍未找到有效解释器: !PYTHON_CMD!
+    echo 【警告】脚本继续，但后续步骤可能失败！
     pause
-    exit /b 1
 )
+echo.
 :step2_done
-set /a CURRENT_STEP+=1
+if !CURRENT_STEP! equ 2 set /a CURRENT_STEP+=1
 
 :: ##############################################################################
 :: 步骤 3  准备项目目录
@@ -241,7 +360,7 @@ echo 【成功】当前目录: !CD!
 if exist ".venv" call :clean_with_spinner ".venv"
 if exist "%LOCK_FILE%" copy "%LOCK_FILE%" "%PROJECT_DIR%\requirements.lock" >nul
 :step3_done
-set /a CURRENT_STEP+=1
+if !CURRENT_STEP! equ 3 set /a CURRENT_STEP+=1
 
 :: ##############################################################################
 :: 步骤 4  创建虚拟环境
@@ -257,13 +376,34 @@ set "VENV_PY=%PROJECT_DIR%\.venv\Scripts\python.exe"
 set "VENV_SITE=%PROJECT_DIR%\.venv\Lib\site-packages"
 echo 【成功】虚拟环境已创建
 :step4_done
-set /a CURRENT_STEP+=1
+if !CURRENT_STEP! equ 4 set /a CURRENT_STEP+=1
 
 :: ##############################################################################
 :: 步骤 5  安装依赖
 :: ##############################################################################
 if !CURRENT_STEP! lss !START_STEP! goto :step5_done
 echo 【步骤 5】安装依赖...
+
+:: 确保在项目目录中
+cd /d "%PROJECT_DIR%" 2>nul
+if errorlevel 1 (
+    echo 【错误】无法进入项目目录: %PROJECT_DIR%
+    pause
+    exit /b 1
+)
+
+:: 复制requirements.lock（如果还不存在）
+if not exist "requirements.lock" (
+    if exist "%LOCK_FILE%" (
+        copy "%LOCK_FILE%" "requirements.lock" >nul
+    ) else (
+        echo 【错误】未找到 requirements.lock 文件
+        echo 源文件: %LOCK_FILE%
+        pause
+        exit /b 1
+    )
+)
+
 set "INSTALL_STATUS=0"
 set "WHEELS_DIR=%BUNDLE_DIR%\wheels"
 
@@ -292,7 +432,7 @@ if not exist "%VENV_SITE%\flask" (
 )
 echo 【成功】依赖安装完成
 :step5_done
-set /a CURRENT_STEP+=1
+if !CURRENT_STEP! equ 5 set /a CURRENT_STEP+=1
 
 :: ##############################################################################
 :: 步骤 6  预置 InsightFace 缓存模型（断网关键）- 优化版
@@ -331,7 +471,7 @@ if errorlevel 1 (
 )
 echo 【成功】buffalo_l 模型已预置到 %INSIGHTFACE_CACHE%
 :step6_done
-set /a CURRENT_STEP+=1
+if !CURRENT_STEP! equ 6 set /a CURRENT_STEP+=1
 
 :: ##############################################################################
 :: 步骤 7  部署完成
@@ -340,19 +480,23 @@ if !CURRENT_STEP! lss !START_STEP! goto :step7_done
 echo 【步骤 7】部署完成！
 
 :: 创建桌面快捷方式
+if not defined START_BAT set "START_BAT=%PROJECT_DIR%\start.bat"
 set "DESKTOP=%USERPROFILE%\Desktop"
-set "START_BAT=%BUNDLE_DIR%\FaceImgMat\start.bat"
 set "SHORTCUT=%DESKTOP%\FaceImgMat.lnk"
 powershell -Command "$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('%SHORTCUT%'); $Shortcut.TargetPath = '%START_BAT%'; $Shortcut.WorkingDirectory = '%BUNDLE_DIR%\FaceImgMat'; $Shortcut.Save()"
 echo 【提示】启动快捷方式已创建到桌面：%SHORTCUT%
 :step7_done
-set /a CURRENT_STEP+=1
+if !CURRENT_STEP! equ 7 set /a CURRENT_STEP+=1
 
 :: ##############################################################################
 :: 步骤 8  启动服务并打开浏览器
 :: ##############################################################################
 if !CURRENT_STEP! lss !START_STEP! goto :step8_done
 echo 【步骤 8】正在启动 FaceImgMat 服务并打开浏览器...
+
+:: 设置启动脚本路径（如果还未设置）
+if not defined START_BAT set "START_BAT=%PROJECT_DIR%\start.bat"
+
 if not exist "%START_BAT%" (
     echo 【错误】未找到 %START_BAT%，无法启动服务！
     pause & exit /b 1
@@ -364,9 +508,16 @@ echo 【成功】服务已启动并打开浏览器！
 :step8_done
 
 echo.
-echo 尽情享受 FaceImgMat 吧！
+echo ================================================================
+set /a LAST_STEP=!CURRENT_STEP!-1
+echo   执行完成！已完成步骤 !START_STEP! 到步骤 !LAST_STEP!
+if !CURRENT_STEP! geq 8 (
+    echo   部署完成！尽情享受 FaceImgMat 吧！
+)
+echo ================================================================
+echo.
 pause
-exit /b
+exit /b 0
 
 :: ========================================================================
 ::  通用子程序
@@ -391,22 +542,58 @@ if not exist "%ARCHIVE%" (
     exit /b 1
 )
 
-echo | set /p="【解压】 %ARCHIVE% "
+echo 【解压】 %ARCHIVE%
+<nul set /p="【进度】 "
 
-:: 尝试tar解压（同步方式）
-tar -xf "%ARCHIVE%" -C "%DEST%" 2>nul
-if !errorlevel! equ 0 (
-    echo  done
+:: 先尝tar（后台运行）
+start /b "" cmd /c "tar -xf "%ARCHIVE%" -C "%DEST%" 2>nul"
+
+:: 显示点点直到tar进程结束
+:wait_tar
+tasklist 2>nul | find /i "tar.exe" >nul
+if errorlevel 1 goto :tar_done
+<nul set /p="█"
+timeout /t 1 /nobreak >nul 2>&1
+goto :wait_tar
+
+:tar_done
+timeout /t 1 /nobreak >nul 2>&1
+echo.
+
+:: 检查tar是否成功
+if exist "%DEST%\*" (
+    echo 【成功】tar 解压完成
     exit /b 0
 )
 
-:: tar失败用PowerShell（同步方式）
+:: tar失败用PowerShell，后台运行+显示点点
 echo.
 echo 【信息】tar不可用，使用PowerShell解压...
-echo | set /p="【解压】 "
-powershell -NoP -C "Expand-Archive -LiteralPath '%ARCHIVE%' -DestinationPath '%DEST%' -Force" 2>nul
-echo  done
-exit /b
+<nul set /p="【进度】 "
+
+:: 后台启动PowerShell解压
+set "PS_SCRIPT=$ProgressPreference='SilentlyContinue'; Expand-Archive -LiteralPath '%ARCHIVE%' -DestinationPath '%DEST%' -Force"
+start /b "" powershell -NoProfile -Command "%PS_SCRIPT%"
+
+:: 显示点点直到PowerShell进程结束
+:wait_ps
+tasklist 2>nul | find /i "powershell.exe" >nul
+if errorlevel 1 goto :ps_done
+<nul set /p="█"
+timeout /t 2 /nobreak >nul 2>&1
+goto :wait_ps
+
+:ps_done
+echo.
+
+:: 验证解压结果
+if exist "%DEST%\*" (
+    echo 【成功】PowerShell 解压完成
+    exit /b 0
+) else (
+    echo 【错误】PowerShell 解压失败
+    exit /b 1
+)
 
 :create_venv_with_spinner
 set "PY=%~1"
