@@ -202,17 +202,26 @@ if defined PYTHON_CMD (
     set "TARGET_PY_DIR=%SystemDrive%\Python312"
 
     :: ④ 执行安装（系统级+写 PATH）
-    echo 【信息】安装 Python 到 %TARGET_PY_DIR%
-    call :install_python_with_spinner "%PY_INSTALLER%" "%TARGET_PY_DIR%"
+    echo 【信息】安装 Python 到 !TARGET_PY_DIR!
+    call :install_python_with_spinner "%PY_INSTALLER%" "!TARGET_PY_DIR!"
 
-    :: ⑤ 立刻刷新当前进程的 PATH，并指定解释器路径
-    set "PATH=%TARGET_PY_DIR%;%TARGET_PY_DIR%\Scripts;%PATH%"
-    set "PYTHON_CMD=%TARGET_PY_DIR%\python.exe"
+    :: ⑤ 等待安装完成并验证
+    echo 【信息】等待Python安装完成...
+    for /l %%i in (1,1,30) do (
+        if exist "!TARGET_PY_DIR!\python.exe" goto :python_installed
+        timeout /t 1 /nobreak >nul
+    )
+    :python_installed
+    
+    :: ⑥ 刷新PATH并设置解释器路径
+    set "PATH=!TARGET_PY_DIR!;!TARGET_PY_DIR!\Scripts;%PATH%"
+    set "PYTHON_CMD=!TARGET_PY_DIR!\python.exe"
 )
 
-:: ⑥ 最终二次校验
+:: ⑦ 最终校验
 if not exist "!PYTHON_CMD!" (
-    echo 【错误】Python 安装后仍未找到有效解释器，脚本终止。
+    echo 【错误】Python 安装后仍未找到有效解释器: !PYTHON_CMD!
+    echo 【提示】请手动安装Python 3.12并重新运行脚本
     pause & exit /b 1)
 :step2_done
 set /a CURRENT_STEP+=1
@@ -428,7 +437,7 @@ exit /b
 set "INSTALLER=%~1"
 set "TARGET_DIR=%~2"
 echo | set /p="【Python】 安装中 ..."
-"%INSTALLER%" /quiet InstallAllUsers=1 TargetDir="%~2" AssociateFiles=0 PrependPath=1 /norestart
+start "" /wait "%INSTALLER%" /quiet InstallAllUsers=1 TargetDir="%~2" AssociateFiles=0 PrependPath=1 /norestart
 echo done
 exit /b
 
