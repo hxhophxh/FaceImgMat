@@ -380,25 +380,36 @@ if not exist "%ARCHIVE%" (
     exit /b 1
 )
 
-echo 【解压】 %ARCHIVE% ...
+echo | set /p="【解压】 %ARCHIVE% "
 
-:: 优先使用tar（同步执行，确保完成）
-tar -xf "%ARCHIVE%" -C "%DEST%" 2>nul
+:: 后台启动tar，前台显示动态点点
+start /b cmd /c "tar -xf "%ARCHIVE%" -C "%DEST%" 2>nul && exit 0 || exit 1"
 if !errorlevel! equ 0 (
-    echo done
+    :: 动态显示点点，每秒检查进程
+    for /l %%i in (1,1,60) do (
+        echo | set /p="."
+        timeout /t 1 /nobreak >nul 2>&1
+        tasklist 2>nul | find /i "tar.exe" >nul || goto :tar_done
+    )
+    :tar_done
+    echo  done
     exit /b 0
 )
 
-:: tar失败则用PowerShell（同步执行）
-echo 【信息】tar失败，使用PowerShell解压...
-powershell -NoP -C "Expand-Archive -LiteralPath '%ARCHIVE%' -DestinationPath '%DEST%' -Force"
-if !errorlevel! equ 0 (
-    echo done
-    exit /b 0
-) else (
-    echo 【错误】解压失败
-    exit /b 1
+:: tar失败用PowerShell
+echo.
+echo 【信息】tar不可用，使用PowerShell解压...
+echo | set /p="【解压】 "
+start /b powershell -NoP -C "Expand-Archive -LiteralPath '%ARCHIVE%' -DestinationPath '%DEST%' -Force"
+:: 动态显示点点
+for /l %%i in (1,1,120) do (
+    echo | set /p="."
+    timeout /t 1 /nobreak >nul 2>&1
+    tasklist 2>nul | find /i "powershell.exe" >nul || goto :ps_done
 )
+:ps_done
+echo  done
+exit /b
 
 :create_venv_with_spinner
 set "PY=%~1"
