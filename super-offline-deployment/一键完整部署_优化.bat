@@ -74,11 +74,27 @@ if exist "%BUNDLE_PATH%" (
 echo 【信息】本地未发现可用离线包，准备下载...
 call :download_with_spinner "%BUNDLE_URL%" "%BUNDLE_PATH%"
 call :unzip_with_retry "%BUNDLE_PATH%" "%SCRIPT_DIR%"
+if errorlevel 1 (
+    echo 【错误】离线包解压失败
+    pause & exit /b 1
+)
 
 :skip_download
+:: 处理双层嵌套目录
 if exist "%SCRIPT_DIR%\%BUNDLE_NAME%\%BUNDLE_NAME%" (
+    echo 【信息】检测到嵌套目录，正在展平...
     robocopy "%SCRIPT_DIR%\%BUNDLE_NAME%\%BUNDLE_NAME%" "%SCRIPT_DIR%\%BUNDLE_NAME%" /E /MOVE /NP /NFL /NDL /NJH /NJS >nul
     rmdir "%SCRIPT_DIR%\%BUNDLE_NAME%\%BUNDLE_NAME%" 2>nul
+)
+
+:: 等待文件系统同步
+timeout /t 2 /nobreak >nul
+
+:: 验证关键文件
+echo 【信息】验证离线包完整性...
+if not exist "%BUNDLE_DIR%" (
+    echo 【错误】离线包目录不存在: %BUNDLE_DIR%
+    pause & exit /b 1
 )
 echo 【成功】离线包已准备: %BUNDLE_DIR%
 echo.
@@ -366,26 +382,23 @@ if not exist "%ARCHIVE%" (
 
 echo 【解压】 %ARCHIVE% ...
 
-:: 统一进度条：先启动解压（tar 或 PowerShell），然后一起动画
-set "DONE=0"
-:: ① 尝试 tar（Win10+ 能直接解 .zip）
-start /b cmd /c "tar -xf "%ARCHIVE%" -C "%DEST%" 2>nul && exit 0 || exit 1" >nul 2>&1
+:: 优先使用tar（同步执行，确保完成）
+tar -xf "%ARCHIVE%" -C "%DEST%" 2>nul
 if !errorlevel! equ 0 (
-    :: tar 可用，给 10 秒动画，提前结束则跳出
-    for /l %%i in (1,1,10) do (
-        >nul timeout /t 1 /nobreak
-        tasklist /fi "WindowTitle eq tar" 2>nul | find "tar" >nul || goto :extract_done
-    )
-    goto :extract_done
+    echo done
+    exit /b 0
 )
 
-:: ② tar 失败则转 PowerShell，前台等待
-start "" /wait powershell -NoP -C "Expand-Archive -LiteralPath '%ARCHIVE%' -DestinationPath '%DEST%' -Force"
-
-:extract_done
-echo.
-echo done
-exit /b
+:: tar失败则用PowerShell（同步执行）
+echo 【信息】tar失败，使用PowerShell解压...
+powershell -NoP -C "Expand-Archive -LiteralPath '%ARCHIVE%' -DestinationPath '%DEST%' -Force"
+if !errorlevel! equ 0 (
+    echo done
+    exit /b 0
+) else (
+    echo 【错误】解压失败
+    exit /b 1
+)
 
 :create_venv_with_spinner
 set "PY=%~1"
